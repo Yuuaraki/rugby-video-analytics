@@ -1,0 +1,53 @@
+# =========================
+# Python / Jupyter
+# =========================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+*.egg
+dist/
+build/
+.env
+venv/
+.venv/
+
+# =========================
+# LaTeX auxiliary files
+# =========================
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.nav
+*.snm
+*.vrb
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# IDE
+# =========================
+.vscode/
+.idea/
+
+# =========================
+# Data / Video files (too large for git)
+# =========================
+*.mp4
+*.avi
+*.mov
+*.csv
+output_*/

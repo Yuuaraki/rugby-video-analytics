@@ -1,0 +1,828 @@
+\documentclass{article}
+
+% Language setting
+% Replace `english' with e.g. `spanish' to change the document language
+\usepackage[english]{babel}
+
+% Set page size and margins
+% Replace `letterpaper' with `a4paper' for UK/EU standard size
+\usepackage[letterpaper,top=2cm,bottom=2cm,left=3cm,right=3cm,marginparwidth=1.75cm]{geometry}
+
+% Useful packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[colorlinks=true, allcolors=blue]{hyperref}
+\usepackage{cite}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{enumitem}
+
+\title{
+  \Large \textbf{Rugby Video Analytics: \\
+  AI-Based Tackle Analysis Robust to Keypoint Occlusion} \\
+  \large Capstone Project --- Interim Report
+}
+\author{
+  Yu Araki \\
+  \small A0304700X \\
+  National University of Singapore
+}
+\date{\today}
+
+
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Introduction}
+
+In modern sports, to keep winning in a competitive situation, every sport requires not only physical skill but also data analytics. Video analytics, 
+particularly through human pose estimation, has emerged as a powerful 
+tool in sports science, enabling automated analysis of athletes' 
+movements to optimize performance and prevent injury~\cite{zheng2021survey}. 
+Conventional coaching relies on subjective visual assessment by human 
+experts, which is limited by the observer's experience, attention span, 
+and inability to quantify subtle kinematic differences. Recent advances 
+in deep learning-based pose estimation have opened the possibility of 
+analyzing standard video footage by extracting joint 
+coordinates~\cite{zheng2021survey}.
+
+Rugby football, as a collision-driven sport, presents significant 
+challenges for video-based motion analytics. Unlike most other sports, 
+rugby involves frequent physical collisions such as tackles where appropriate body posture is not just a performance 
+factor but a safety-critical requirement. Precise kinematic analysis 
+of collision posture is therefore essential. However, current 
+state-of-the-art models, including MediaPipe~\cite{lugaresi2019mediapipe} 
+and YOLO-Pose~\cite{maji2022yolopose}, exhibit significant reliability 
+degradation in such scenarios, as overlapping bodies cause severe 
+occlusion of body keypoints~\cite{ji2025gct}.
+
+This project aims to develop an AI-based coaching pipeline for rugby 
+tackle analysis that is robust to keypoint occlusion. In the first 
+phase of this capstone project, inspired by the DETR + GCT (Graph Convolutional Transformer) architecture proposed by Ji et al.~\cite{ji2025gct}---which combines Detection Transformers with 
+graph-based keypoint refinement and gating mechanisms---we propose a YOLO\,+\,GCT pipeline. In this approach, YOLO-Pose serves as the base keypoint detector, and a gating mechanism identifies low-confidence keypoints that are passed to a GCT module for spatial refinement. The 
+GCT module estimates occluded or low-confidence joint positions from neighboring visible joints via graph 
+convolution~\cite{kipf2017gcn,dwivedi2021graphtransformer} and 
+multi-head self-attention~\cite{vaswani2017attention}.
+
+This interim report presents the results of Phase~1 and addresses 
+the limitations that motivate the Phase~2 plan: extending the spatial 
+refinement model to incorporate temporal dependencies across video frames.
+
+% =====================
+\section{Problem Definition}
+% =====================
+
+Given a video sequence $\mathbf{V} = \{I_1, I_2, \ldots, I_T\}$ consisting
+of $T$ frames, the task of human pose estimation is to predict, for each
+frame $I_t$, a set of $K$ body keypoints.
+Each keypoint $k \in \{1, 2, \ldots, K\}$ is represented as a tuple:
+\begin{equation}
+  \hat{p}_k^{(t)} = \bigl(\hat{x}_k^{(t)},\; \hat{y}_k^{(t)},\; c_k^{(t)}\bigr),
+  \label{eq:keypoint}
+\end{equation}
+where $(\hat{x}_k^{(t)}, \hat{y}_k^{(t)})$ denote the predicted 2-D pixel
+coordinates of keypoint $k$ at frame $t$, and $c_k^{(t)} \in [0,1]$ is the
+associated confidence score reflecting the model's certainty in that
+prediction.
+In the COCO keypoint format adopted by YOLO-Pose~\cite{maji2022yolopose},
+$K = 17$ joints are defined, covering the nose, eyes, ears, shoulders,
+elbows, wrists, hips, knees, and ankles.
+
+In rugby tackle situations, physical contact between the tackler and the
+ball carrier causes partial or full occlusion of body parts.
+A keypoint $k$ at frame $t$ is defined as \emph{occluded} when its
+confidence score falls below a threshold $\tau$:
+\begin{equation}
+  \mathcal{O}(t)
+    = \bigl\{\, k \in \{1,\ldots,K\} \;\big|\; c_k^{(t)} < \tau \,\bigr\},
+  \label{eq:occlusion_set}
+\end{equation}
+where $\mathcal{O}(t)$ denotes the set of occluded keypoints at frame $t$.
+In this study, $\tau = 0.5$ is adopted, consistent with the standard COCO
+evaluation threshold.
+
+The occlusion problem manifests in two failure modes that reduce the
+reliability of downstream coaching analysis:
+
+\begin{enumerate}
+
+  \item \textbf{Positional jitter}~\cite{zeng2022smoothnet}.
+  When $c_k^{(t)}$ is low, the predicted coordinates
+  $(\hat{x}_k^{(t)},\hat{y}_k^{(t)})$ exhibit large frame-to-frame
+  fluctuations.
+  This is quantified by the \emph{jitter metric} $J_k$, defined as the
+  mean Euclidean displacement between consecutive frames for keypoint $k$:
+  \begin{equation}
+    J_k = \frac{1}{T-1}
+          \sum_{t=2}^{T}
+          \left\|
+            \hat{p}_k^{(t)} - \hat{p}_k^{(t-1)}
+          \right\|_2,
+    \label{eq:jitter}
+  \end{equation}
+  where $\|\cdot\|_2$ denotes the Euclidean norm.
+  A high $J_k$ value during the collision phase indicates unreliable
+  tracking of joint $k$, which directly corrupts any downstream
+  joint-angle or angular-velocity computation.
+
+  \item \textbf{Identity switching}.
+  In multi-person scenarios, detectors can re-assign keypoints from the target athlete to a nearby
+  individual when bodies overlap~\cite{zheng2021survey}.
+  This is particularly problematic for tackle analysis, where the tackler
+  and ball carrier are in close proximity, and the detector must
+  consistently track a specific individual throughout the sequence.
+
+\end{enumerate}
+
+Given the above, the main research question of this project is:
+\begin{quote}
+  \textit{How can positional jitter $J_k$ for occluded keypoints
+  ($k \in \mathcal{O}(t)$) be reduced during rugby tackle sequences,
+  while maintaining the accuracy of non-occluded keypoints?}
+\end{quote}
+
+Specifically, the objective is to design a spatial refinement module that
+takes the raw YOLO-Pose output
+$\bigl\{\hat{p}_k^{(t)}\bigr\}_{k=1}^{K}$
+as input and produces a refined estimate
+$\bigl\{\tilde{p}_k^{(t)}\bigr\}_{k=1}^{K}$ such that:
+\begin{equation}
+  J_k^{\,\text{refined}} < J_k^{\,\text{raw}},
+  \qquad \forall\, k \in \mathcal{O}(t).
+  \label{eq:objective}
+\end{equation}
+The design of the refinement module and its confidence-aware blending
+strategy are detailed in Section~\ref{sec:methodology}.
+
+\section{Literature Review}
+\label{sec:literature}
+
+This section reviews the key technical components that underpin the proposed
+pipeline: per-frame pose estimation models (Section~\ref{sec:lit:pose}),
+graph-based skeleton modelling with GCN (Section~\ref{sec:lit:gcn}),
+and the Graph Convolutional Transformer with gating mechanisms
+(Section~\ref{sec:lit:gct}).
+
+% ---------------------------------------------------------
+\subsection{Per-Frame Pose Estimation: MediaPipe and YOLO-Pose}
+\label{sec:lit:pose}
+% ---------------------------------------------------------
+
+Both MediaPipe~\cite{lugaresi2019mediapipe} and YOLO-Pose~\cite{maji2022yolopose}
+operate on a per-frame basis: each video frame is processed independently to
+predict the 2-D coordinates $(\hat{x}_k^{(t)}, \hat{y}_k^{(t)})$ and an
+associated confidence score $c_k^{(t)}$ for each of $K$ body keypoints.
+
+\paragraph{MediaPipe.}
+MediaPipe Pose~\cite{lugaresi2019mediapipe} is a lightweight, real-time
+pose estimation framework developed by Google.
+It operates in a two-stage pipeline: a person detector first localises
+the bounding box of the subject, and a landmark regression network
+(BlazePose~\cite{bazarevsky2020blazepose}) then predicts 33 body
+keypoints within the detected region.
+Each keypoint is represented as $(x, y, z, v)$, where
+$(x, y) \in [0,1]$ are normalised image coordinates, $z$ is a relative
+depth estimate, and $v \in [0,1]$ is a visibility score indicating the
+likelihood that the joint is visible in the frame.
+
+\paragraph{YOLO-Pose.}
+YOLO (You Only Look Once) is a family of single-shot object detection
+models that process an entire image in one forward pass, jointly predicting
+bounding boxes and class probabilities~\cite{maji2022yolopose}.
+YOLO-Pose extends this architecture to simultaneously output $K = 17$ body
+keypoints in the COCO format for each detected person.
+For each keypoint $k$, the model outputs
+$(\hat{x}_k^{(t)},\, \hat{y}_k^{(t)},\, c_k^{(t)})$,
+where $(\hat{x}_k^{(t)}, \hat{y}_k^{(t)})$ are pixel coordinates and
+$c_k^{(t)} \in [0,1]$ is a confidence score.
+
+A key architectural difference from MediaPipe is that YOLO-Pose performs
+person detection and keypoint regression in a single unified network, whereas
+MediaPipe uses a two-stage cascade.
+This makes YOLO-Pose inherently capable of handling multi-person scenarios,
+as each detected bounding box carries its own independent set of keypoints---a
+property that is essential for tackle analysis involving two players.
+
+% ---------------------------------------------------------
+\subsection{Graph Convolutional Networks for Skeleton Modelling}
+\label{sec:lit:gcn}
+% ---------------------------------------------------------
+
+The human skeleton forms a natural graph structure: joints serve as nodes and
+bones serve as edges.
+This observation motivates the use of Graph Convolutional Networks (GCN)
+for pose refinement~\cite{kipf2017gcn}.
+Given $K = 17$ keypoints, a GCN defines an undirected graph
+$\mathcal{G} = (\mathcal{V}, \mathcal{E})$,
+where each vertex $v_k \in \mathcal{V}$ represents a body joint and each
+edge $(v_i, v_j) \in \mathcal{E}$ encodes an anatomical connection.
+For example, if a wrist keypoint is occluded, its position can be inferred
+from the visible elbow via graph connectivity, as the wrist is anatomically
+``downstream'' of the elbow along the kinematic chain.
+
+The skeleton connectivity is encoded in an adjacency matrix
+$A \in \mathbb{R}^{K \times K}$, where $A_{ij} = 1$ if joints $i$ and $j$
+are connected and $A_{ij} = 0$ otherwise.
+To allow each node to retain its own features during aggregation, self-loops
+are added, giving $\hat{A} = A + I$.
+To prevent feature magnitudes from scaling with node degree---a problem that
+arises because high-degree nodes such as the shoulder aggregate information
+from more neighbours than low-degree nodes such as the wrist---the adjacency
+matrix is symmetrically normalised following Kipf \&
+Welling~\cite{kipf2017gcn}:
+\begin{equation}
+  \tilde{A} = \hat{D}^{-1/2}\,\hat{A}\,\hat{D}^{-1/2},
+  \label{eq:norm_adj}
+\end{equation}
+where $\hat{D}$ is the diagonal degree matrix with
+$\hat{D}_{ii} = \sum_{j} \hat{A}_{ij}$.
+Each element of $\tilde{A}$ is scaled by $1/\!\sqrt{d_i d_j}$, which
+ensures that both high-degree and low-degree nodes are updated at the
+same magnitude.
+
+The GCN layer update rule for node features
+$H^{(\ell)} \in \mathbb{R}^{K \times d_\ell}$ at layer $\ell$ is then:
+\begin{equation}
+  H^{(\ell+1)} = \sigma\!\left(\tilde{A}\,H^{(\ell)}\,W^{(\ell)}\right),
+  \label{eq:gcn_update}
+\end{equation}
+where $W^{(\ell)} \in \mathbb{R}^{d_\ell \times d_{\ell+1}}$ is a
+learnable weight matrix and $\sigma(\cdot)$ is a nonlinear activation
+function (ReLU in this work).
+Equation~\eqref{eq:gcn_update} can equivalently be written node-wise as
+\begin{equation}
+  h_i^{(\ell+1)} = \sigma\!\left(
+    \sum_{j \in \mathcal{N}(i)} \frac{1}{\sqrt{d_i\, d_j}}\,
+    W^{(\ell)}\, h_j^{(\ell)}
+  \right),
+  \label{eq:gcn_nodewise}
+\end{equation}
+which shows explicitly how each joint aggregates information from its
+anatomical neighbours $\mathcal{N}(i)$, weighted by the inverse square
+root of the degree product.
+
+% ---------------------------------------------------------
+\subsection{Graph Convolutional Transformer with Gating Mechanisms}
+\label{sec:lit:gct}
+% ---------------------------------------------------------
+
+While GCN is effective at propagating information between anatomically adjacent
+joints, a single GCN layer aggregates features only from direct neighbours.
+To capture global dependencies---such as the relationship between a wrist and
+the opposite hip during a tackle---Dwivedi and Bresson~\cite{dwivedi2021graphtransformer}
+proposed the Graph Transformer (GT), which augments graph convolution with
+multi-head self-attention (MHA)~\cite{vaswani2017attention}.
+Ji et al.~\cite{ji2025gct} subsequently integrated this architecture into a
+pose estimation pipeline as a Graph Convolutional Transformer (GCT), combined
+with a gating mechanism for confidence-aware feature filtering.
+
+\paragraph{Multi-Head Self-Attention.}
+MHA computes attention over all $K$ nodes simultaneously.
+Given node features $H \in \mathbb{R}^{K \times d}$, the query, key, and
+value matrices are projected as
+$Q = H W_Q$, $K_{\text{mat}} = H W_K$, $V = H W_V$, and the
+attention output is:
+\begin{equation}
+  \text{Attention}(Q, \mathbf{K}, V) = \text{softmax}\left(\frac{Q\mathbf{K}^\top}{\sqrt{d_k}}\right)V
+  \label{eq:mha}
+\end{equation}
+where $d_k$ is the dimension of each attention head and the factor
+$1/\!\sqrt{d_k}$ stabilises the gradient by preventing the dot products from
+growing large~\cite{vaswani2017attention}.
+This allows every joint to directly attend to every other joint in a single
+layer, overcoming the locality constraint of GCN.
+
+\paragraph{Gating Mechanism.}
+A gating mechanism is applied to selectively suppress features of
+low-confidence keypoints before residual addition~\cite{ji2025gct}.
+Given an input feature vector $\mathbf{x} \in \mathbb{R}^d$, the gate
+computes an element-wise scaling factor via sigmoid activation:
+\begin{equation}
+  \mathbf{g} = \sigma\!\left(W_g\,\mathbf{x} + \mathbf{b}_g\right),
+  \label{eq:gate}
+\end{equation}
+where $W_g \in \mathbb{R}^{d \times d}$ is a learnable weight matrix,
+$\mathbf{b}_g \in \mathbb{R}^d$ is a bias, and $\sigma(\cdot)$ is the
+sigmoid function.
+The gated output is:
+\begin{equation}
+  \mathbf{z} = \mathbf{x} \odot \mathbf{g},
+  \label{eq:gated_output}
+\end{equation}
+where $\odot$ denotes the element-wise (Hadamard) product.
+When the confidence of a keypoint is low, the gate learns to output values
+near zero, suppressing unreliable features while allowing high-confidence
+features to pass through unmodified.
+
+\paragraph{GCT Layer.}
+A complete GCT layer processes the input node features $H$ through three
+sequential sub-layers, each with residual connections and layer
+normalisation:
+\begin{align}
+  H'    &= \mathrm{LayerNorm}\!\left(H   + \mathrm{GCN}(H,\,\tilde{A})\right),
+           \label{eq:gct1} \\
+  H''   &= \mathrm{LayerNorm}\!\left(H'  + \mathrm{Gate}\!\left(
+             \mathrm{MHA}(H')\right)\right),
+           \label{eq:gct2} \\
+  H^{\mathrm{out}}
+        &= \mathrm{LayerNorm}\!\left(H'' + \mathrm{FFN}(H'')\right),
+           \label{eq:gct3}
+\end{align}
+where $\mathrm{FFN}$ is a two-layer feed-forward network with ReLU
+activation:
+\begin{equation}
+  \mathrm{FFN}(\mathbf{x})
+    = W_2\,\mathrm{ReLU}(W_1\,\mathbf{x} + \mathbf{b}_1) + \mathbf{b}_2.
+  \label{eq:ffn}
+\end{equation}
+The residual connections and layer normalisation stabilise training and
+mitigate vanishing gradients, following standard Transformer
+practice~\cite{vaswani2017attention}.
+In Eq.~\eqref{eq:gct1}, GCN captures \emph{local} anatomical structure;
+in Eq.~\eqref{eq:gct2}, MHA followed by gating captures \emph{global}
+dependencies while suppressing low-confidence features; and
+Eq.~\eqref{eq:gct3} applies a non-linear projection to the combined
+representation.
+Figure~\ref{fig:gct_arch} illustrates the architecture of a single GCT
+layer used in this work.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.45\textwidth]{figure/GCT_layer_architecture.png}
+  \caption{Architecture of a single GCT layer: GCN (local aggregation)
+           $\rightarrow$ Multi-Head Attention with Gating (global context
+           and confidence filtering) $\rightarrow$ Feed-Forward Network,
+           each with residual connections and layer normalisation.}
+  \label{fig:gct_arch}
+\end{figure}
+
+% =============================================================================
+\section{Methodology}
+\label{sec:methodology}
+% =============================================================================
+
+The proposed methodology consists of a two-stage pipeline for analysing
+rugby tackle videos.
+
+% ---------------------------------------------------------
+\subsection{Stage~1: Base Keypoint Detector Selection}
+\label{sec:meth:stage1}
+% ---------------------------------------------------------
+
+Given an input video
+$\mathbf{V} = \{I_1, \ldots, I_T\}$ containing a rugby tackle scene
+with occlusion, two single-frame pose estimation models---MediaPipe Pose
+and YOLO-Pose---are applied to extract keypoint predictions for each
+frame.
+The purpose of this stage is to compare the two models and select the
+more suitable base detector for the downstream refinement pipeline.
+The comparison is conducted in terms of confidence score across all 17
+COCO keypoints, with particular attention to the occlusion phase of the
+tackle.
+
+% ---------------------------------------------------------
+\subsection{Stage~2: GCT Spatial Refinement}
+\label{sec:meth:stage2}
+% ---------------------------------------------------------
+
+The raw YOLO output
+$\bigl\{\hat{p}_k^{(t)}\bigr\}_{k=1}^{K}$ is fed into a trained Graph
+Convolutional Transformer (GCT), which refines the keypoint positions by
+exploiting the spatial relationships of the human skeleton graph.
+A confidence-aware blending strategy combines the raw YOLO output and
+the GCT prediction to produce the final estimate
+$\bigl\{\tilde{p}_k^{(t)}\bigr\}_{k=1}^{K}$.
+
+\paragraph{GCT Input Features.}
+For each keypoint~$k$ at frame~$t$, the input feature vector to the GCT
+is a 5-dimensional vector:
+\begin{equation}
+  \mathbf{f}_k^{(t)} = \bigl(
+    \hat{x}_k^{(t)},\;
+    \hat{y}_k^{(t)},\;
+    c_k^{(t)},\;
+    \Delta x_k^{(t)},\;
+    \Delta y_k^{(t)}
+  \bigr),
+  \label{eq:gct_input}
+\end{equation}
+where $(\hat{x}_k^{(t)}, \hat{y}_k^{(t)})$ are the normalised 2-D
+coordinates predicted by YOLO, $c_k^{(t)}$ is the confidence score, and
+$(\Delta x_k^{(t)}, \Delta y_k^{(t)})$ represent the frame-to-frame
+velocity defined as
+$\Delta x_k^{(t)} = \hat{x}_k^{(t)} - \hat{x}_k^{(t-1)}$.
+The inclusion of velocity provides a simple form of temporal context
+within the single-frame input.
+
+\paragraph{Model Architecture.}
+The GCT model architecture is summarised in
+Table~\ref{tab:gct_hyperparams}.
+The input projection maps the 5-dimensional features to a
+$d_{\mathrm{model}} = 64$ dimensional hidden space.
+The model consists of $L = 3$ stacked GCT layers, each containing a GCN
+sub-layer, a 4-head attention sub-layer with gating, and a feed-forward
+network with $d_{\mathrm{ffn}} = 128$ hidden units.
+The output projection maps the hidden representation back to 2
+dimensions $(x, y)$ for coordinate regression.
+
+\begin{table}[htbp]
+  \centering
+  \caption{GCT model hyperparameters.}
+  \label{tab:gct_hyperparams}
+  \begin{tabular}{@{}ll@{}}
+    \toprule
+    Hyperparameter & Value \\
+    \midrule
+    Input features $d_{\mathrm{in}}$
+      & 5 $(x, y, c, \Delta x, \Delta y)$ \\
+    Hidden dimension $d_{\mathrm{model}}$ & 64 \\
+    Number of GCT layers $L$ & 3 \\
+    Attention heads $n_{\mathrm{heads}}$ & 4 \\
+    FFN hidden dimension $d_{\mathrm{ffn}}$ & 128 \\
+    Dropout rate & 0.1 \\
+    Output dimension & 2 $(x, y)$ \\
+    Total parameters & $\sim$126\,K \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+
+\paragraph{Self-Supervised Training via Masked Keypoint Prediction.}
+Since manually annotated ground-truth labels for rugby tackle video are
+unavailable, a self-supervised training strategy based on masked keypoint
+prediction is employed.
+Video frames where all 17 keypoints have high confidence
+($c_k > \tau_{\mathrm{GT}}$, with $\tau_{\mathrm{GT}} = 0.5$) are
+selected as pseudo ground-truth.
+For each such frame, $M = 20$ augmented samples are generated by
+randomly masking approximately 20\% of the keypoints (3--4 keypoints per
+frame) and adding Gaussian noise ($\sigma = 0.02$) to the masked
+coordinates.
+A separate training video of a single athlete performing agility
+movements under clear visibility (no occlusion) was used, ensuring the
+model learned from clean skeletal configurations.
+
+The loss function is a masked mean squared error (Masked MSE), computed
+only over the keypoints that were artificially masked:
+\begin{equation}
+  \mathcal{L}_{\mathrm{masked}}
+    = \frac{
+        \sum_{k=1}^{K} (1 - m_k) \cdot
+        \bigl\| \tilde{p}_k - p_k^{\,\mathrm{GT}} \bigr\|^2
+      }{
+        \sum_{k=1}^{K} (1 - m_k) + \epsilon
+      },
+  \label{eq:masked_loss}
+\end{equation}
+where $m_k \in \{0, 1\}$ is the mask indicator ($m_k = 1$ if
+keypoint~$k$ is visible), $\tilde{p}_k$ is the GCT prediction,
+$p_k^{\,\mathrm{GT}}$ is the pseudo ground-truth coordinate, and
+$\epsilon = 10^{-8}$ prevents division by zero.
+
+The model was trained for 100 epochs using the Adam optimiser with an
+initial learning rate of $10^{-3}$ and weight decay of $10^{-5}$.
+A cosine annealing schedule was applied to decay the learning rate.
+The batch size was set to 64, and gradient clipping with a maximum norm
+of 1.0 was used to stabilise training.
+An 80/20 random split of the training samples was used for training and
+validation, respectively.
+
+\paragraph{Confidence-Aware Blending.}
+At inference time, the GCT is applied to every frame of the evaluation
+video.
+Rather than replacing the YOLO predictions entirely, a
+confidence-aware blending strategy produces the final keypoint estimate:
+\begin{equation}
+  \tilde{p}_k^{(t)}
+    = \alpha_k^{(t)} \cdot \hat{p}_k^{(t)}
+      + \bigl(1 - \alpha_k^{(t)}\bigr) \cdot \hat{p}_{k,\mathrm{GCT}}^{(t)},
+  \label{eq:blending}
+\end{equation}
+where $\alpha_k^{(t)} = \min(c_k^{(t)},\, 1)$ is the blending weight
+derived from the YOLO confidence score.
+When confidence is high ($c_k^{(t)} \approx 1$), the original YOLO
+prediction is retained.
+When confidence is low ($c_k^{(t)} \to 0$), the output shifts toward
+the GCT refinement.
+This ensures that the GCT does not degrade predictions in well-detected
+regions while providing correction in occluded regions.
+
+
+% =============================================================================
+\section{Experimental Results and Analysis}
+\label{sec:results}
+% =============================================================================
+
+% ---------------------------------------------------------
+\subsection{Stage~1: MediaPipe vs.\ YOLO-Pose Comparison}
+\label{sec:res:stage1}
+% ---------------------------------------------------------
+
+Table~\ref{tab:conf_comparison} summarises the confidence score
+comparison between MediaPipe and YOLO-Pose across 126 frames of a rugby
+tackle video.
+YOLO achieved a higher overall mean confidence score (0.857) compared
+to MediaPipe (0.722).
+The most significant differences were observed for the upper limbs:
+YOLO scored 0.729 and 0.688 for the left and right wrists,
+respectively, compared to MediaPipe's 0.312 and 0.242.
+This is particularly relevant for tackle analysis, where the arms
+(typically wrapping the ball carrier) are critical to identify.
+Both models showed high and comparable confidence for large-area joints
+such as the hips, suggesting that the challenge lies specifically in the
+distal limb and head regions where occlusion most frequently occurs.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Confidence/visibility score comparison: YOLO-Pose vs.\
+           MediaPipe across 126 frames. Bold indicates the higher mean
+           confidence per joint.}
+  \label{tab:conf_comparison}
+  \footnotesize
+  \begin{tabular}{@{}l cc cc l@{}}
+    \toprule
+    Joint
+      & YOLO Mean & $<$0.5\%
+      & MP Mean   & $<$0.5\%
+      & Winner \\
+    \midrule
+    nose            & 0.171 & 86.5\% & \textbf{0.963} &  3.2\% & MP   \\
+    left\_shoulder  & \textbf{0.983} &  0.0\% & 0.968 &  3.2\% & Draw \\
+    right\_shoulder & \textbf{0.977} &  0.0\% & 0.968 &  3.2\% & Draw \\
+    left\_elbow     & \textbf{0.856} & 14.3\% & 0.485 & 54.0\% & YOLO \\
+    right\_elbow    & \textbf{0.847} & 10.3\% & 0.452 & 46.0\% & YOLO \\
+    left\_wrist     & \textbf{0.729} & 22.2\% & 0.312 & 76.2\% & YOLO \\
+    right\_wrist    & \textbf{0.688} & 23.8\% & 0.242 & 84.9\% & YOLO \\
+    left\_hip       & \textbf{0.994} &  0.0\% & 0.968 &  3.2\% & Draw \\
+    right\_hip      & \textbf{0.993} &  0.0\% & 0.968 &  3.2\% & Draw \\
+    left\_knee      & \textbf{0.987} &  0.0\% & 0.752 &  7.9\% & YOLO \\
+    right\_knee     & \textbf{0.992} &  0.0\% & 0.712 & 10.3\% & YOLO \\
+    left\_ankle     & \textbf{0.946} &  4.8\% & 0.810 &  7.9\% & YOLO \\
+    right\_ankle    & \textbf{0.973} &  0.0\% & 0.787 &  5.6\% & YOLO \\
+    \midrule
+    \textbf{Overall}& \textbf{0.857} & 12.5\% & 0.722 & 23.7\% & \textbf{YOLO} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Figure~\ref{fig:conf_timeline} shows the confidence scores over time for
+selected joints.
+Both models perform reliably during non-contact phases
+($t \leq 3$\,s), with $|\mathcal{O}(t)| \approx 0$ for most frames
+when $\tau = 0.5$.
+During the collision phase ($t \approx 4$\,s), $|\mathcal{O}(t)|$
+increases sharply, particularly for distal joints such as wrists and
+elbows, with confidence scores dropping to $c_k^{(t)} < 0.3$.
+The degradation is most pronounced for MediaPipe, where wrist confidence
+frequently drops to zero, while YOLO maintains greater consistency
+despite also experiencing reduced scores around the occluded scene.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{figure/confidence_timeline_plot.png}
+  \caption{Confidence score over time for selected joints (right
+           shoulder, hip, knee, ankle). The dashed yellow line indicates
+           $\tau = 0.5$. MediaPipe shows severe instability during the
+           collision phase ($t \approx 3.5$--$4.5$\,s).}
+  \label{fig:conf_timeline}
+\end{figure}
+
+Based on these findings, YOLO-Pose (specifically, YOLOv11s-pose) was
+selected as the base detector for the downstream GCT pipeline,
+predicated on its superior mean confidence and robust multi-person
+localisation capability.
+
+% ---------------------------------------------------------
+\subsection{Stage~2: GCT Refinement Results}
+\label{sec:res:stage2}
+% ---------------------------------------------------------
+
+The trained GCT was evaluated on a separate rugby tackle video not used
+during training.
+The training video captured athletic movement under clear visibility,
+while the evaluation video featured a tackle with real occlusion during
+the collision phase.
+Since the GCT itself does not modify the confidence score, the mean
+jitter~$J_k$ (Eq.~\ref{eq:jitter}) was used as the primary evaluation
+metric.
+Table~\ref{tab:jitter} presents the comparison between raw YOLO and
+YOLO\,+\,GCT.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Mean jitter comparison: YOLO vs.\ YOLO\,+\,GCT. ``Occ''
+           columns are computed only over frames where
+           $c_k^{(t)} < 0.5$. Positive reduction indicates improvement.}
+  \label{tab:jitter}
+  \footnotesize
+  \begin{tabular}{@{}l cc r cc r@{}}
+    \toprule
+    Keypoint
+      & YOLO   & GCT    & Reduce
+      & Occ YOLO & Occ GCT & Occ Red \\
+    \midrule
+    left\_wrist     & 0.0089 & 0.0085 & +5.3\%
+                    & 0.0063 & 0.0062 & +0.6\% \\
+    right\_wrist    & 0.0108 & 0.0102 & +5.1\%
+                    & 0.0039 & 0.0059 & $-$53.2\% \\
+    left\_elbow     & 0.0063 & 0.0067 & $-$5.0\%
+                    & 0.0042 & 0.0048 & $-$16.8\% \\
+    right\_elbow    & 0.0072 & 0.0072 & +0.5\%
+                    & 0.0000 & 0.0000 & +0.0\% \\
+    left\_knee      & 0.0065 & 0.0064 & +1.3\%
+                    & 0.0000 & 0.0000 & +0.0\% \\
+    right\_knee     & 0.0057 & 0.0058 & $-$0.8\%
+                    & 0.0000 & 0.0000 & +0.0\% \\
+    nose            & 0.0070 & 0.0075 & $-$7.1\%
+                    & 0.0064 & 0.0068 & $-$5.2\% \\
+    left\_eye       & 0.0071 & 0.0083 & $-$17.2\%
+                    & 0.0071 & 0.0083 & $-$17.2\% \\
+    right\_eye      & 0.0070 & 0.0082 & $-$18.4\%
+                    & 0.0069 & 0.0080 & $-$15.5\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Several findings emerge from the jitter analysis:
+
+\begin{enumerate}
+
+  \item \textbf{Marginal improvement on wrists.}
+  For the joints most relevant to tackle analysis---the left and right
+  wrists---the GCT achieved overall jitter reductions of 5.3\% and
+  5.1\%, respectively.
+  However, the right wrist jitter \emph{increased} by 53.2\% during
+  occlusion-specific frames, indicating that the model remains sensitive
+  to severe occlusion and can become unstable when multiple adjacent
+  joints are simultaneously masked.
+
+  \item \textbf{Many joints exhibited zero occluded frames.}
+  For the majority of joints (shoulders, hips, knees), no frames were
+  classified as occluded ($|\mathcal{O}(t)| = 0$), indicating the
+  difficulty in evaluating GCT effectiveness under the current dataset
+  and the need to refine the balance between base model and GCT output.
+
+  \item \textbf{Face keypoints showed the worst degradation.}
+  The eyes and nose exhibited the largest jitter increases ($-$17\% to
+  $-$18\%).
+  This is attributable to the evaluation video being recorded from
+  behind the athlete, rendering face keypoints permanently invisible
+  regardless of contact.
+  This demonstrates the model's sensitivity to camera angle.
+
+\end{enumerate}
+
+% ---------------------------------------------------------
+\subsection{Phase Detection Consistency}
+\label{sec:res:phase}
+% ---------------------------------------------------------
+
+As an additional evaluation, angular velocity-based phase detection
+results between YOLO and YOLO\,+\,GCT were compared
+(Figure~\ref{fig:phase_detection}).
+Both pipelines identified the same impact frame (frame~79,
+$t = 2.63$\,s), with peak angular velocities of 1,737\,deg/s (YOLO) and
+1,690\,deg/s (GCT).
+Despite a slight reduction in peak velocity under the GCT pipeline, the
+overall phase structure was preserved, confirming that the GCT
+refinement does not disrupt downstream temporal analysis.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\textwidth]{figure/phase_detection_comparison.png}
+  \caption{Phase detection comparison: YOLO (left) vs.\ YOLO\,+\,GCT
+           (right), showing right shoulder angle (top) and angular
+           velocity (bottom). Both pipelines detect the same impact
+           frame at $t = 2.63$\,s.}
+  \label{fig:phase_detection}
+\end{figure}
+
+
+% =============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% =============================================================================
+
+This interim report presented a two-stage pipeline for rugby tackle
+video analysis: (1)~base keypoint detector selection and
+(2)~spatial refinement using a Graph Convolutional Transformer (GCT).
+The Stage~1 comparison demonstrated that YOLO-Pose significantly
+outperforms MediaPipe in tackle scenarios, particularly for upper-limb
+keypoints critical to tackle assessment.
+The Stage~2 GCT refinement produced marginal improvements for wrist
+jitter ($\sim$5\%) but revealed fundamental limitations of spatial-only
+refinement under severe occlusion.
+
+Three principal factors account for these limitations:
+\begin{enumerate}[label=(\alph*)]
+  \item \textbf{Insufficient spatial information during severe
+  occlusion.}
+  When both the wrist and elbow of the same arm are simultaneously
+  occluded, the GCT has no reliable anchor from which to infer the
+  missing positions.
+  Graph propagation from distant visible joints carries only a weak
+  signal to accurately predict the precise coordinates of a distal
+  joint through multiple hops.
+
+  \item \textbf{Training--evaluation domain gap.}
+  The GCT was trained on agility movement data with artificially masked
+  keypoints, whereas the evaluation scenario involves real occlusion
+  caused by body overlap.
+  The spatial configuration of visible joints may differ significantly
+  between these two settings.
+  Furthermore, the model proved unstable for particular body regions
+  depending on the camera angle.
+
+  \item \textbf{Lack of temporal context.}
+  The current model processes each frame independently, with only a
+  single-frame velocity feature $(\Delta x, \Delta y)$ as a temporal
+  cue.
+  Multi-frame temporal modelling is expected to provide a much stronger
+  prior for occluded keypoint estimation, as the trajectory of a joint
+  across several frames constrains its plausible position far more
+  effectively than a single-frame snapshot.
+\end{enumerate}
+
+
+% =============================================================================
+\section{Challenges and Knowledge Acquired}
+\label{sec:challenges}
+% =============================================================================
+
+% ---------------------------------------------------------
+\subsection{Technical Challenges}
+\label{sec:challenges:technical}
+% ---------------------------------------------------------
+
+The most significant technical challenge encountered in Phase~1 was the
+severity of the occlusion problem in rugby tackle video.
+While the literature reports high accuracy for pose estimation under
+general occlusion scenarios---Ji et al.~\cite{ji2025gct} achieve a mean
+Average Precision (mAP) of 93.4\% on the PoseTrack
+dataset---rugby tackles present an \emph{extreme} occlusion regime:
+two players' bodies are pressed together at high velocity, causing
+simultaneous occlusion of multiple joints on the same kinematic chain.
+This differs fundamentally from the benchmark datasets used in prior
+work, where occlusion typically affects isolated joints rather than
+entire limb segments.
+
+% ---------------------------------------------------------
+\subsection{Knowledge and Skills Gained}
+\label{sec:challenges:skills}
+% ---------------------------------------------------------
+
+Through Phase~1, the necessary technical knowledge was acquired across
+multiple domains.
+In computer vision, hands-on experience with two production-grade pose
+estimation frameworks---MediaPipe and YOLO-Pose---was gained, including
+their different output formats, coordinate systems (normalised vs.\
+pixel), and multi-person handling strategies.
+In deep learning, a Graph Convolutional Transformer was implemented from
+scratch in PyTorch, developing a working understanding of graph
+convolution with normalised adjacency matrices, scaled multi-head
+attention, sigmoid gating with Hadamard products, and self-supervised
+training with masked inputs.
+
+% =============================================================================
+\section{Next Semester Plan}
+\label{sec:next}
+% =============================================================================
+
+The key finding of this interim report is the limitation of a
+spatial-only refinement model, even with GCT enhancement, for occluded
+keypoints during rugby tackles.
+This motivates the primary objective for the next semester:
+incorporating \textbf{temporal correlations} across consecutive video
+frames.
+The hypothesis is that an occluded joint at frame~$t$ can be more
+accurately estimated by leveraging its known trajectory from frames
+$t\!-\!1,\, t\!-\!2,\, \ldots,\, t\!-\!w$ (where $w$ is the temporal
+window size), rather than relying solely on the spatial configuration of
+visible joints within a single frame.
+
+Once the model achieves reliable keypoint tracking through occlusion,
+the final stage of the project envisions integrating the pose estimation
+pipeline with a Large Language Model (LLM) to generate natural-language
+coaching feedback.
+By converting the refined kinematic data---joint angles, angular
+velocities, and body posture metrics---into structured prompts, the
+system aims to deliver actionable, personalised coaching advice that
+bridges the gap between quantitative biomechanical analysis and
+intuitive athlete instruction.
+
+
+\bibliographystyle{ieeetr}
+\bibliography{sample}
+
+\end{document}
