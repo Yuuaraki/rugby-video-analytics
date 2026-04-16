@@ -40,12 +40,6 @@ rugby-video-analytics/
 | `Yolo_-_26.ipynb` | Stage 1 | YOLOv11s-Pose estimation and quantitative comparison with MediaPipe. Analyses confidence scores across 17 COCO keypoints with focus on occlusion phases. |
 | `Skelton_graph_GCN.ipynb` | Stage 2 | Full GCT pipeline: skeleton graph construction → GCN layer → Multi-Head Attention → Gating Mechanism → self-supervised training with masked keypoints → evaluation on tackle video. |
 
-## Key Results
-
-- **YOLO-Pose outperforms MediaPipe** in tackle scenarios (mean confidence: 0.857 vs 0.722), especially for upper-limb keypoints (wrist: 0.729 vs 0.312).
-- **GCT refinement** achieves ~5% jitter reduction on wrist keypoints overall, but remains limited under severe simultaneous occlusion.
-- **Phase detection consistency** is preserved: both YOLO and YOLO+GCT identify the same impact frame (t = 2.63s).
-
 ## Technical Stack
 
 - **Python 3.13**, PyTorch 2.10
@@ -61,6 +55,3 @@ rugby-video-analytics/
 3. Vaswani, A. et al. (2017). Attention Is All You Need. *NeurIPS*.
 4. Dwivedi, V. P. & Bresson, X. (2021). A Generalization of Transformer Networks to Graphs. *AAAI Workshop*.
 
-## License
-
-This project is for academic purposes as part of the NUS Capstone programme.
