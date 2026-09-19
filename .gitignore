@@ -51,3 +51,9 @@ desktop.ini
 *.mov
 *.csv
 output_*/
+# large outputs (kept in ~/HybrIK and GCS, not in git)
+raw_images/
+*.mp4
+res_images/
+res_2d_images/
+.ipynb_checkpoints/
