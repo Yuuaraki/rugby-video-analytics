@@ -57,3 +57,6 @@ raw_images/
 res_images/
 res_2d_images/
 .ipynb_checkpoints/
+*.pk
+*.pt
+*.pth
