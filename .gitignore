@@ -60,3 +60,8 @@ res_2d_images/
 *.pk
 *.pt
 *.pth
+
+# large local artefacts (videos, labels, renders)
+data/
+runs/
+outputs/
