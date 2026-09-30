@@ -1,4 +1,5 @@
 import numpy as np
+#from pyproj import err
 
 def interpolate_gaps(z, observed):
     """z: (T,) 1-D series; observed: (T,) bool. Linear interpolation across unobserved runs; edges held constant.""" 
@@ -76,4 +77,46 @@ def smooth_sheet(coords, confs, sigma_a, sigma_m, tau=0.5):
             out['smooth'][:, k, a] = kf_res['smooth']
 
     return out
-                
+
+def hide_and_predict(coords, obs, sigma_m, sigma_a_grid=(1e-5, 3e-5, 1e-4, 3e-4, 1e-3, 3e-3), win=30, n_win=20, seed=0):
+    """Worksheet ex. d: hide n_win fully-observed windows of `win` frames, run RTS for each sigma_a, and measure the
+    mean joint error (Euclidean, Phase-1 units) inside the hidden windows against the raw visible coordinates.
+    coords (T,K,2), obs (T,K) bool. Returns (err: dict {sigma_a or 'interp': error}, starts: list of window starts)."""
+    T, K, _ = coords.shape
+    # 1. candidate starts: windows where ALL joints are observed on EVERY frame
+    full = np.array([obs[t:t + win].all() for t in range(T - win + 1)])
+    cand = np.flatnonzero(full)
+    rng = np.random.default_rng(seed)
+    rng.shuffle(cand)
+    start = []
+    for s in cand:
+        all_good = True
+        for prev_s in start:
+            if abs(s - prev_s) < win:
+                all_good = False
+                break
+        if all_good:
+            start.append(s)
+        if len(start) >= n_win:
+            break
+
+    hidden = np.zeros(T, bool)
+    for s in start:
+        hidden[s:s + win] = True
+    obs_h= obs & (~hidden)[:, None]
+    err = {}
+    # 2. linear interpolation on the same windows (reference line in the figure)
+    est = np.zeros_like(coords)
+    for k in range(K):
+        for a in range(2):
+            est[:, k, a] = interpolate_gaps(coords[:, k, a], obs_h[:, k])
+    err['interp'] = np.linalg.norm(est - coords, axis=-1)[hidden].mean()
+    # 3. RTS per sigma_a
+    for sa in sigma_a_grid:
+        est = np.zeros_like(coords)
+        for k in range(K):
+            for a in range(2):
+                kf_res = kf_cv_1d(coords[:, k, a], obs_h[:, k], sa, sigma_m)
+                est[:, k, a] = kf_res['smooth']
+        err[sa] = np.linalg.norm(est - coords, axis=-1)[hidden].mean()
+    return err, start

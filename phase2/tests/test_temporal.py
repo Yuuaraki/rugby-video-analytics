@@ -27,4 +27,21 @@ assert np.std(res['smooth'] - p_true) < 0.5 * np.std(z - p_true)
 obs_end = obs_all.copy(); obs_end[60:] = False
 res = kf_cv_1d(p_true, obs_end, sigma_a=1e-4, sigma_m=3e-3)
 assert np.isfinite(res["smooth"]).all() and abs(res["smooth"][-1] - p_true[-1]) < 1e-3
+
+from phase2.temporal import hide_and_predict
+rng = np.random.default_rng(1)
+T, K = 900, 12
+sa_true, sm_true = 3e-4, 3e-3
+acc = rng.normal(0, sa_true, size=(T, K, 2)) 
+vel = np.cumsum(acc, axis=0) + rng.normal(0, 0.003, size=(1, K, 2))
+pos = 0.5 + np.cumsum(vel, axis=0)
+z = pos + rng.normal(0, sm_true, pos.shape)
+err, starts = hide_and_predict(z, np.ones((T, K), dtype=bool), sigma_m=sm_true)
+best = min((k for k in err if k != 'interp'), key = err.get)
+assert len(starts) == 20 and best in (1e-4, 3e-4, 1e-3), (best, err)     # within a factor of 3 of the truth
+assert err[best] < err["interp"], err
+print("test 5:", {k: round(float(v), 5) for k, v in err.items()}, "best:", best)
+
+
+
 print("all temporal tests passed")
