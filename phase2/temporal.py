@@ -20,8 +20,8 @@ def kf_cv_1d(z, observed, sigma_a, sigma_m):
     x = np.array([z[t0], 0.0]); P = np.diag([r, 1.0]) 
     #start: known position, unknown velocity
     
-    for t in range(T):
-        if t > 0:
+    for t in range(t0, T):
+        if t > t0:
             x = F @ x; 
             P = F @ P @ F.T + Q
         x_pred[t] = x
@@ -37,8 +37,9 @@ def kf_cv_1d(z, observed, sigma_a, sigma_m):
         x_filt[t] = x
         P_filt[t] = P
         
+    x_filt[:t0] = [z[t0], 0.0]      # frames before the first observation hold z[t0] (same edge rule as interpolate_gaps)
     x_s = x_filt.copy(); P_s = P_filt.copy()
-    for t in range(T-2, -1, -1):
+    for t in range(T-2, t0-1, -1):
         C = P_filt[t] @ F.T @ np.linalg.inv(P_pred[t+1])
         x_s[t] = x_filt[t] + C @ (x_s[t+1] - x_pred[t+1])
         P_s[t] = P_filt[t] + C @ (P_s[t+1] - P_pred[t+1]) @ C.T

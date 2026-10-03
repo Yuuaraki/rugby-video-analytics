@@ -28,6 +28,15 @@ obs_end = obs_all.copy(); obs_end[60:] = False
 res = kf_cv_1d(p_true, obs_end, sigma_a=1e-4, sigma_m=3e-3)
 assert np.isfinite(res["smooth"]).all() and abs(res["smooth"][-1] - p_true[-1]) < 1e-3
 
+# ---- Test 6: leading gap — recursion starts at t0; frames before t0 hold z[t0] ----
+obs_lead = obs_all.copy(); obs_lead[:20] = False
+full = kf_cv_1d(p_true, obs_all, sigma_a=1e-4, sigma_m=3e-3)
+lead = kf_cv_1d(p_true, obs_lead, sigma_a=1e-4, sigma_m=3e-3)
+assert np.allclose(lead["smooth"][20:], full["smooth"][20:], atol=1e-6)
+assert np.allclose(lead["smooth"][:20], p_true[20]) and np.allclose(lead["filt"][:20], p_true[20])
+print("test 6: leading gap OK")
+
+# ---- Test 5: hide_and_predict ----
 from phase2.temporal import hide_and_predict
 rng = np.random.default_rng(1)
 T, K = 900, 12
