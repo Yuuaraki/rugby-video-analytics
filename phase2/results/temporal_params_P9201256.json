@@ -1,0 +1,27 @@
+{
+  "sigma_m": {
+    "tackler": 0.005040327473779988,
+    "carrier": 0.001473206968668271
+  },
+  "sigma_m_segment": [
+    3162,
+    3228
+  ],
+  "sigma_m_frames": 67,
+  "sigma_a": 1e-05,
+  "sigma_a_note": "provisional: RTS-grid minimum on P9201256 visible segments, not evidence of superiority over interpolation; update with the training footage",
+  "sigma_a_by_window": {
+    "60": {
+      "best": 1e-05,
+      "n_windows": 11,
+      "err": 0.010546404784693087,
+      "interp": 0.009316935777953008
+    },
+    "30": {
+      "best": 3e-05,
+      "n_windows": 26,
+      "err": 0.009645969313921421,
+      "interp": 0.007970200603194711
+    }
+  }
+}
