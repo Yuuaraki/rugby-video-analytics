@@ -1,8 +1,5 @@
 {
-  "sigma_m": {
-    "tackler": 0.005040327473779988,
-    "carrier": 0.001473206968668271
-  },
+  "sigma_m": 0.000509774349429186,
   "sigma_m_segment": [
     3162,
     3228
@@ -23,5 +20,21 @@
       "err": 0.009645969313921421,
       "interp": 0.007970200603194711
     }
+  },
+  "sigma_m_pre_contact": {
+    "tackler": 0.005040327473779988,
+    "carrier": 0.001473206968668271
+  },
+  "sigma_m_rule": "detector floor: median of 9 calm-segment estimates (pre-contact excluded), common to all persons",
+  "sigma_m_floor_series": {
+    "seg245/tackler": 0.00041,
+    "seg245/carrier": 0.00049,
+    "seg839/tackler": 0.00049,
+    "seg839/carrier": 0.00049,
+    "seg1619/tackler": 0.00051,
+    "seg1619/carrier": 0.00369,
+    "seg2827/tackler": 0.00078,
+    "seg2827/carrier": 0.00115,
+    "single2931": 0.00057
   }
 }
