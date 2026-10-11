@@ -135,11 +135,17 @@ def score(pred, gt, clip, alphas=(0.10, 0.20)):
         rows.append(row)
     return rows
 
-def offsets(pred, gt):
-    """Per joint on vis==0 frames: mean offset vector (systematic) and std per axis (scatter), px."""
+def offsets(pred, gt, clean=None, max_rel=0.5):
+    """Per joint on CLEAN vis==0 joint-frames: mean offset vector (systematic) and std per axis (scatter), px.
+    clean: (N,) bool frame mask (default: all frames). (0,0) misses and dist > max_rel * s_t (identity errors) are dropped."""
     rows = []
+    s = torso_length(gt)
+    dist = np.linalg.norm(pred - gt["coords"], axis=-1)
+    present = ~(pred == 0).all(-1)
+    frame_ok = np.ones(len(pred), bool) if clean is None else np.asarray(clean, bool)
     for k, name in enumerate(BODY12):
-        ok = (gt["vis"][:, k] == 0) & np.isfinite(pred[:, k]).all(-1)
+        vis0 = gt["vis"][:, k] == 0
+        ok = vis0 & np.isfinite(pred[:, k]).all(-1) & present[:, k] & frame_ok & (dist[:, k] <= max_rel * s)
         d = pred[ok, k] - gt["coords"][ok, k]
         if len(d):
             mean_dx, mean_dy = d.mean(axis=0)
@@ -147,7 +153,7 @@ def offsets(pred, gt):
             mean_dist = np.linalg.norm(d, axis=-1).mean()
         else:
             mean_dx = mean_dy = std_dx = std_dy = mean_dist = float("nan")
-        rows.append(dict(joint=name, n=int(ok.sum()), mean_dx=mean_dx, mean_dy=mean_dy,
+        rows.append(dict(joint=name, n=int(vis0.sum()), n_used=int(ok.sum()), mean_dx=mean_dx, mean_dy=mean_dy,
                          std_dx=std_dx, std_dy=std_dy, mean_dist=mean_dist))
     return rows
 
@@ -176,8 +182,13 @@ def main():
         for r in score(pred, gt, args.clip, tuple(args.alphas)):
             all_rows.append({"condition": name, **r})
             md.append(f"| {name} | {r['subset']} | {r['n']} | " + " | ".join(f"{r[f'pck@{a:.2f}']:.3f}" for a in args.alphas) + " |")
+        clean = np.zeros(len(gt["frames"]), bool)
+        for ph, lo, hi in PHASES.get(args.clip, []):
+            if ph in ("pre", "fall"):                                   # clean segments: no fusion, no identity ambiguity
+                clean |= (gt["frames"] >= lo) & (gt["frames"] <= hi)
         with open(out / f"offset_{args.clip}_{name}.csv", "w", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=["joint", "n", "mean_dx", "mean_dy", "std_dx", "std_dy", "mean_dist"]); w.writeheader(); w.writerows(offsets(pred, gt))
+            w = csv.DictWriter(f, fieldnames=["joint", "n", "n_used", "mean_dx", "mean_dy", "std_dx", "std_dy", "mean_dist"]); w.writeheader()
+            w.writerows(offsets(pred, gt, clean if clean.any() else None))
     with open(out / f"pck_{args.clip}.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(all_rows[0].keys())); w.writeheader(); w.writerows(all_rows)
     (out / f"pck_{args.clip}.md").write_text("\n".join(md) + "\n"); print("\n".join(md))
