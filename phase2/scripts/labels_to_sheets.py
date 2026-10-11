@@ -1,7 +1,11 @@
 """Build per-person YOLO answer sheets (.npz, Phase-1 schema) from the canonical label txt files.
 One file per frame, 1-based original frame number in the name; missing file = no detection.
 Run in `rugby` from ~/rugby-video-analytics:
-   python phase2/scripts/labels_to_sheets.py <labels_dir> <stem> <first> <last> <out_dir> [--fusion assign|drop]
+   python phase2/scripts/labels_to_sheets.py <labels_dir> <stem> <first> <last> <out_dir> [--fusion assign|drop] [--tackler-side left|right] [--min-size px] [--min-long px]
+
+`n_det` counts detections retained by the optional size gate; `n_det_raw` records
+the original detection count before that gate. Initialization waits for exactly
+two retained detections and assigns the tackler by the selected side.
 """
 import argparse, numpy as np
 from pathlib import Path
@@ -64,6 +68,12 @@ def assign(prev, dets, min_iou=0.1):
                 best = [j0, j1]
     return best
 
+def performer_sized(box, min_size, min_long):
+    """True if the bbox (cx, cy, w, h; normalised) is large enough to be one of the two players."""
+    w_px, h_px = box[2] * W, box[3] * H
+    return bool((np.sqrt(w_px * h_px) >= min_size) |
+                (np.maximum(w_px, h_px) >= min_long))
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("labels_dir"); ap.add_argument("stem")
@@ -71,7 +81,13 @@ def main():
     ap.add_argument("last", type=int)
     ap.add_argument("out_dir")
     ap.add_argument("--fusion", choices=["assign", "drop"], default="assign", help="Single-detection frames: assign to the better-overlapping track, or drop(both unobserved)")
+    ap.add_argument("--tackler-side", choices=["left", "right"], default="right", help="side of the frame the tackler is on at the init frame")
+    ap.add_argument("--min-size", type=float, default=0.0, help="keep detections with sqrt(bbox area) >= this (px); 0 = keep all")
+    ap.add_argument("--min-long", type=float, default=0.0, help="keep detections with bbox long side >= this (px); 0 = keep all")
     args = ap.parse_args()
+    for name, value in (("--min-size", args.min_size), ("--min-long", args.min_long)):
+        if not np.isfinite(value) or value < 0:
+            ap.error(f"{name} must be finite and nonnegative")
     
     frames = np.arange(args.first, args.last + 1)
     T = len(frames)
@@ -79,18 +95,22 @@ def main():
     confs = np.zeros((T,2,17))
     boxes = np.zeros((T,2,4))
     n_det = np.zeros(T, dtype=int)
+    n_raw = np.zeros(T, dtype=int)
     prev = [None, None]  # last known boxes for track 0 and 1
     started = False
     init_frame = -1
     
     for i, n in enumerate(frames):
         dets = read_frame(args.labels_dir, args.stem, n)
+        n_raw[i] = len(dets)
+        dets = [d for d in dets if performer_sized(d["box"], args.min_size, args.min_long)]
         n_det[i] = len(dets)
         if not started:
             if len(dets) != 2:
                 continue           
-            j_right = int(np.argmax([d["box"][0] for d in dets]))
-            a = [j_right, 1 - j_right]
+            xs = [d["box"][0] for d in dets]
+            j_tackler = int(np.argmax(xs) if args.tackler_side == "right" else np.argmin(xs))
+            a = [j_tackler, 1 - j_tackler]
             started = True
             init_frame = int(n)
         elif len(dets) == 1 and args.fusion == "drop":
@@ -110,6 +130,7 @@ def main():
 
     print(f"frames {args.first}-{args.last}: T={T}  n_det histogram (0/1/2/3+):",
           [int((n_det == c).sum()) for c in (0, 1, 2)] + [int((n_det >= 3).sum())], " init frame:", init_frame)
+    print(f"  tackler side: {args.tackler_side}  size gate: min_size={args.min_size}, min_long={args.min_long}  detections removed by the gate: {int((n_raw - n_det).sum())}")
     out_dir = Path(args.out_dir).expanduser(); out_dir.mkdir(parents=True, exist_ok=True)
     for p, name in enumerate(PERSON):
         seen = np.any(boxes[:, p] != 0, axis=1)
@@ -117,6 +138,8 @@ def main():
         np.savez(out_dir / f"yolo_raw_{args.stem}_{name}_{args.fusion}.npz",
                  coords=coords[:, p].astype(np.float32), confs=confs[:, p].astype(np.float32),
                  bbox=boxes[:, p].astype(np.float32), n_det=n_det, frame_index=frames,
+                 n_det_raw=n_raw, tackler_side=args.tackler_side,
+                 min_size=args.min_size, min_long=args.min_long,
                  fps=FPS, W=W, H=H, joint_names=np.array(COCO17), source="yolo_raw", person=name, fusion=args.fusion)
     print("saved to", out_dir)
 

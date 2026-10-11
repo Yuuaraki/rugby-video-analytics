@@ -1,8 +1,13 @@
-"""Prepare cropped JPEG frames for ground-truth annotation (P9201256 tackle window)."""
+"""Prepare cropped JPEG frames for ground-truth annotation.
+
+Defaults target the P9201256 tackle window. Override with --clip, --video,
+--labels-dir, --out-dir, --start, --end and --step.
+"""
 from pathlib import Path
 import numpy as np
 import json
 import cv2
+import argparse
 
 W, H = 3840, 2160
 F_START, F_END, F_STEP = 3222, 3416, 2
@@ -91,6 +96,28 @@ def export_frames(frames, rect):
     return n_saved
 
 if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description="Export cropped JPEG frames for ground-truth annotation.")
+    ap.add_argument("--clip", default=CLIP)
+    ap.add_argument("--video", default=str(VIDEO))
+    ap.add_argument("--labels-dir", default=str(LABEL_DIR))
+    ap.add_argument("--out-dir", default=str(OUT_DIR))
+    ap.add_argument("--start", type=int, default=F_START)
+    ap.add_argument("--end", type=int, default=F_END)
+    ap.add_argument("--step", type=int, default=F_STEP)
+    args = ap.parse_args()
+    if args.start < 1:
+        ap.error("--start must be positive (1-based frame number)")
+    if args.end < args.start:
+        ap.error("--end must be greater than or equal to --start")
+    if args.step < 1:
+        ap.error("--step must be positive")
+    CLIP = args.clip
+    VIDEO = Path(args.video).expanduser()
+    LABEL_DIR = Path(args.labels_dir).expanduser()
+    OUT_DIR = Path(args.out_dir).expanduser()
+    F_START = args.start
+    F_END = args.end
+    F_STEP = args.step
     frames, rect, union = compute_crop_rect()
     rx0, ry0, rx1, ry1 = rect
     print("n_frames:", len(frames))

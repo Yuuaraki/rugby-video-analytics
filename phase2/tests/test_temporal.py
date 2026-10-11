@@ -51,6 +51,17 @@ assert len(starts) == 20 and best in (1e-4, 3e-4, 1e-3), (best, err)     # withi
 assert err[best] < err["interp"], err
 print("test 5:", {k: round(float(v), 5) for k, v in err.items()}, "best:", best)
 
+empty_grid = (1e-6, 3e-6, 1e-5)
+for empty_obs, win in ((np.zeros((20, 12), dtype=bool), 10),
+					   (np.ones((20, 12), dtype=bool), 30),
+					   (np.tile(np.arange(20)[:, None] % 2 == 0, (1, 12)), 10)):
+	empty_err, empty_starts = hide_and_predict(
+		np.zeros((20, 12, 2)), empty_obs, sigma_m=sm_true,
+		sigma_a_grid=empty_grid, win=win, n_win=100)
+	assert empty_starts == []
+	assert set(empty_err) == {'interp', *empty_grid}
+	assert all(np.isnan(value) for value in empty_err.values())
+print("empty-window tests passed")
 
 
 print("all temporal tests passed")

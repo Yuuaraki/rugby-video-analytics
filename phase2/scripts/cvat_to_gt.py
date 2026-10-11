@@ -65,6 +65,12 @@ def main():
     W, H = meta["W"], meta["H"]
     frame_index, xy_crop, vis = load_cvat(args.xml, args.max_frame)
     coords = to_normalized(xy_crop, vis, meta["crop_origin"], W, H)
+    # points placed outside the image but not marked Outside
+    # boolean mask (T, 12): x or y is outside [0, 1]
+    out = (coords[..., 0] < 0) | (coords[..., 0] > 1) | (coords[..., 1] < 0) | (coords[..., 1] > 1)
+    for t, j in zip(*np.where(out)):
+        print(f"WARNING: frame {frame_index[t]} {JOINTS[j]} vis={vis[t, j]} is outside the image: "
+              f"x={coords[t, j, 0] * W:.1f} px, y={coords[t, j, 1] * H:.1f} px")
 
     same = (xy_crop[1:] == xy_crop[:-1]).all(axis=(1, 2))
     for k in frame_index[1:][same]:

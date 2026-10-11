@@ -101,6 +101,9 @@ def hide_and_predict(coords, obs, sigma_m, sigma_a_grid=(1e-5, 3e-5, 1e-4, 3e-4,
         if len(start) >= n_win:
             break
 
+    if not start:
+        return {'interp': np.nan, **{sa: np.nan for sa in sigma_a_grid}}, start
+
     hidden = np.zeros(T, bool)
     for s in start:
         hidden[s:s + win] = True
