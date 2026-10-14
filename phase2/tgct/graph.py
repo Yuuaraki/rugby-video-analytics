@@ -60,5 +60,12 @@ def normalize_adjacency(A):
     return A_norm
 
 def body12_A_norm():
-    """Normalised adjacency D^-1/2 (A+I) D^-1/2 for the 12-joint graph."""
+    """Normalised adjacency D^-1/2 (A+I) D^-1/2 for the 12-joint graph.
+
+    Note: row sums are close to, but not exactly, 1 (0.908 / 1.030 / 1.039 for
+    degree-2 / 3 / 4 joints). Symmetric normalisation divides edge (i, j) by
+    sqrt(d_i * d_j) rather than by d_i, so row i sums to sum_j 1/sqrt(d_i * d_j),
+    which equals 1 only when every neighbour has the same degree as i. Row
+    normalisation D^-1 (A+I) would give exactly 1 but is not symmetric.
+    """
     return normalize_adjacency(build_adjacency_matrix(12, EDGES12, add_self_loops=True))
