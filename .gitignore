@@ -50,6 +50,7 @@ desktop.ini
 *.avi
 *.mov
 *.csv
+!phase2/results/identity_fix_*.csv
 output_*/
 # large outputs (kept in ~/HybrIK and GCS, not in git)
 raw_images/
