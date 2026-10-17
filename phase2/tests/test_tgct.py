@@ -7,6 +7,7 @@ from phase2.tgct.graph import body12_A_norm, EDGES12, LR_SWAP
 from phase2.tgct.layers import GCTLayer, TemporalAttention
 from phase2.tgct.model import TGCT
 from phase2.tgct.losses import tgct_loss
+from phase2.tgct.data import sample_occlusion, hflip
 
 
 # ---- Test 1: shapes and graph ----
@@ -105,8 +106,36 @@ def test_3b_loss_requires_three_frames():
         else:
             raise AssertionError(f"Expected ValueError for T={T}")
 
+def test_4_occlusion_stats():
+    rng = np.random.default_rng(0)
+    T, K = 128, 12
+    rates, has_run = [], []
+    for _ in range(1000):
+        h = sample_occlusion(T, K, rng)
+        rates.append(h.mean())
+        run5 = h[:-4] & h[1:-3] & h[2:-2] & h[3:-1] & h[4:]  # contiguous runs of 5
+        has_run.append(run5.any())
+    assert 0.05 < np.mean(rates) < 0.6  
+    assert all(has_run)  
+
+# ---- Test 5: horizontal flip is an involution ----
+def test_5_hflip_involution():
+    rng = np.random.default_rng(0)
+    coords = rng.random((10, 12, 2)).astype(np.float32)
+    obs = rng.random((10, 12)) < 0.7
+    conf = rng.random((10, 12)).astype(np.float32)
+    c2, o2, f2 = hflip(*hflip(coords, obs, conf))
+    assert np.allclose(c2, coords) and (o2 == obs).all() and np.allclose(f2, conf)
+    assert (np.array(LR_SWAP)[LR_SWAP] == np.arange(12)).all()
+    c1, _, _ = hflip(coords, obs, conf)
+    assert np.allclose(c1[:, 0, 0], 1.0 - coords[:, 1, 0])    # new L_sho x == 1 - old R_sho x
+
+
 if __name__ == "__main__":           # allows running without pytest
     test_1a_graph(); test_1b_layer_shapes(); print("test 1 OK")
     test_2a_identity_and_params(); test_2b_temporal_axis(); print("test 2 OK")
     test_3_loss_hand_example(); print("test 3 OK")
     test_3b_loss_requires_three_frames(); print("test 3 boundary OK")
+    test_4_occlusion_stats(); print("test 4 OK")
+    test_5_hflip_involution(); print("test 5 OK")
+
