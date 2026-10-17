@@ -43,6 +43,8 @@ def _read_verdicts(csv_path):
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"{csv_path}:{line}: frame must be an integer") from exc
             verdict = (row["verdict"] or "").strip()
+            if not verdict:                                   # unjudged row (annotation chat leaves it blank) -> unlisted
+                continue
             if verdict not in VERDICTS:
                 raise ValueError(f"{csv_path}:{line}: unknown verdict {verdict!r}; expected one of {VERDICTS}")
             if frame in rows:
@@ -82,7 +84,9 @@ def _apply_verdicts(tackler, carrier, decisions):
     return np.asarray(verdicts, dtype=str), np.asarray(bases, dtype=str)
 
 
-def _fill_unlisted_frames(frames, decisions):
+def _fill_unlisted_frames(frames, decisions, transition=None):
+    """Unlisted frame between two listed neighbours: same verdict -> inherit; different verdicts -> `transition`
+    (None keeps it unlisted; "no_valid" drops it as an observation, the conservative choice for interp/RTS)."""
     filled = dict(decisions)
     for frame in map(int, frames):
         if frame in decisions or (frame - 1) not in decisions or (frame + 1) not in decisions:
@@ -90,6 +94,8 @@ def _fill_unlisted_frames(frames, decisions):
         left_verdict, right_verdict = decisions[frame - 1][0], decisions[frame + 1][0]
         if left_verdict == right_verdict:
             filled[frame] = (left_verdict, "filled from neighbours")
+        elif transition is not None:
+            filled[frame] = (transition, f"transition {left_verdict}->{right_verdict}: {transition}")
     return filled
 
 
@@ -101,6 +107,8 @@ def main():
         action="store_true",
         help="unlisted frame inherits the verdict when both neighbours are listed with the same verdict",
     )
+    ap.add_argument("--transition", choices=["skip", "no_valid"], default="no_valid",
+                    help="odd frame whose even neighbours disagree: keep as assign (skip) or drop (no_valid)")
     args = ap.parse_args()
     d = Path(args.sheet_dir).expanduser()
     tk = _load_sheet(d / f"yolo_raw_{args.stem}_tackler_assign.npz", "tackler")
@@ -108,7 +116,7 @@ def main():
     frames = tk["frame_index"]
     decisions = _read_verdicts(args.csv)
     if args.fill_odd:
-        decisions = _fill_unlisted_frames(frames, decisions)
+        decisions = _fill_unlisted_frames(frames, decisions, None if args.transition == "skip" else args.transition)
     verdict, basis = _apply_verdicts(tk, cr, decisions)
     counts = {v: int((verdict == v).sum()) for v in VERDICTS}
     tk["identity_verdict"] = verdict

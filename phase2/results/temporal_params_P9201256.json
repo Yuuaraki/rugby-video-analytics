@@ -47,5 +47,12 @@
       "err": 0.009645969313921421,
       "interp": 0.007970200603194711
     }
+  },
+  "sigma_a_solo_win30": {
+    "n_windows": 93,
+    "best": 0.001,
+    "err": 0.0248,
+    "interp": 0.02993,
+    "note": "grid-edge minimum, reported not adopted (D7: 60-frame windows decide); RTS beat interp at 0.5 s gaps"
   }
 }
