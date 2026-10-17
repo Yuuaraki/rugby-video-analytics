@@ -21,7 +21,7 @@ def parse_point(el):
     vis = 2 if el.get("outside") == "1" else 1 if el.get("occluded") == "1" else 0
     return label, x, y, vis
 
-def load_cvat(xml_path, max_frame=None):
+def load_cvat(xml_path, max_frame=None, skip_empty=False):
     """Return frame_index (T,), xy_crop (T, 12, 2) in crop pixels, vis (T, 12)."""
     root = ET.parse(xml_path).getroot()
     frames, xy_list, vis_list = [], [], []
@@ -30,6 +30,8 @@ def load_cvat(xml_path, max_frame=None):
         if max_frame is not None and k > max_frame:
             continue
         skeletons = image.findall("skeleton")
+        if skip_empty and len(skeletons) == 0:
+            continue
         assert len(skeletons) == 1, f"frame {k}: expected 1 skeleton, got {len(skeletons)}"
         xy = np.full((len(JOINTS), 2), np.nan)
         vis = np.full(len(JOINTS), -1, dtype=np.int8)
@@ -59,11 +61,13 @@ def main():
     ap.add_argument("--meta", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--max-frame", type=int, default=None)
+    ap.add_argument("--skip-empty", action="store_true")
     args = ap.parse_args()
+    print("input:", args.xml)
 
     meta = json.loads(Path(args.meta).read_text())
     W, H = meta["W"], meta["H"]
-    frame_index, xy_crop, vis = load_cvat(args.xml, args.max_frame)
+    frame_index, xy_crop, vis = load_cvat(args.xml, args.max_frame, args.skip_empty)
     coords = to_normalized(xy_crop, vis, meta["crop_origin"], W, H)
     # points placed outside the image but not marked Outside
     # boolean mask (T, 12): x or y is outside [0, 1]

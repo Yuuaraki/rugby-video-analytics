@@ -1,4 +1,5 @@
 """Draw the YOLO tackler/carrier sheets on the GT crop frames for the identity check."""
+import argparse
 import csv
 import json
 from pathlib import Path
@@ -6,11 +7,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-CLIP = "P9201256"
-NPZ_DIR = Path.home() / "data/phase2_npz"
-FRAME_DIR = Path.home() / "data/phase2_gt/frames_P9201256"
-OUT_DIR = Path.home() / "data/phase2_gt/identity_overlay_P9201256"
-CSV_PATH = Path.home() / "rugby-video-analytics/phase2/results/identity_fix_P9201256.csv"
+
 CONF_DRAW = 0.05
 EDGES = [(5, 6), (5, 7), (7, 9), (6, 8), (8, 10), (5, 11), (6, 12), (11, 12),
          (11, 13), (13, 15), (12, 14), (14, 16), (0, 5), (0, 6)]  # COCO-17
@@ -38,13 +35,22 @@ def draw_sheet(img, xy, conf, color, tag):
     return int(ok.sum())
 
 def main():
-    meta = json.loads((FRAME_DIR / "crop_meta.json").read_text())
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--clip", default="P9201256")
+    ap.add_argument("--npz-dir", default=str(Path.home() / "data/phase2_npz"))
+    ap.add_argument("--frame-dir", default=str(Path.home() / "data/phase2_gt/frames_P9201256"))
+    ap.add_argument("--out-dir", default=str(Path.home() / "data/phase2_gt/identity_overlay_P9201256"))
+    ap.add_argument("--csv", default=str(Path.home() / "rugby-video-analytics/phase2/results/identity_fix_P9201256.csv"))
+    args = ap.parse_args()
+    clip, npz_dir, frame_dir = args.clip, Path(args.npz_dir), Path(args.frame_dir)
+    out_dir, csv_path = Path(args.out_dir), Path(args.csv)
+    meta = json.loads((frame_dir / "crop_meta.json").read_text())
     W,H, origin = meta["W"], meta["H"], meta["crop_origin"]
-    sheets = {tag: np.load(NPZ_DIR / f"yolo_raw_{CLIP}_{name}.npz") for tag, (name, _) in SHEETS.items()}
-    OUT_DIR.mkdir(parents=True,exist_ok=True)
+    sheets = {tag: np.load(npz_dir / f"yolo_raw_{clip}_{name}.npz") for tag, (name, _) in SHEETS.items()}
+    out_dir.mkdir(parents=True,exist_ok=True)
     rows = []
     for k in meta["frames"]:
-        img = cv2.imread(str(FRAME_DIR / f"{k:06d}.jpg"))
+        img = cv2.imread(str(frame_dir / f"{k:06d}.jpg"))
         counts = {}
         for tag, (_, color) in SHEETS.items():
             s = sheets[tag]
@@ -56,19 +62,19 @@ def main():
         label = f"{k}  n_det={n_det}  T joints={counts['T']}  C joints={counts['C']}"
         cv2.rectangle(img, (0, 0), (1500, 90), (0, 0, 0), -1)
         cv2.putText(img, label, (20, 62), cv2.FONT_HERSHEY_SIMPLEX, 1.8, (255, 255, 255), 4)
-        cv2.imwrite(str(OUT_DIR / f"{k:06d}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        cv2.imwrite(str(out_dir / f"{k:06d}.jpg"), img, [cv2.IMWRITE_JPEG_QUALITY, 85])
         rows.append([k, n_det, "", ""])
 
-    if CSV_PATH.exists():
-        print("CSV already exists, not overwritten:", CSV_PATH)
+    if csv_path.exists():
+        print("CSV already exists, not overwritten:", csv_path)
     else:
-        CSV_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with CSV_PATH.open("w", newline="", encoding="utf-8") as f:
+        csv_path.parent.mkdir(parents=True, exist_ok=True)
+        with csv_path.open("w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["frame", "n_det", "verdict", "basis"])
             w.writerows(rows)
-        print("template written:", CSV_PATH)
-    print("overlays:", len(rows), "->", OUT_DIR)
+        print("template written:", csv_path)
+    print("overlays:", len(rows), "->", out_dir)
 
 
 if __name__ == "__main__":
