@@ -8,7 +8,8 @@ from pathlib import Path
 BODY12 = ["L_sho", "R_sho", "L_elb", "R_elb", "L_wri", "R_wri", "L_hip", "R_hip", "L_kne", "R_kne", "L_ank", "R_ank"]
 COCO_BODY12 = list(range(5, 17))
 GROUPS = {"sho": [0, 1], "elb": [2, 3], "wri": [4, 5], "hip": [6, 7], "kne": [8, 9], "ank": [10, 11]}
-PHASES = {"P9201256": [("pre", -np.inf, 3226), ("contact", 3228, 3280), ("fusion", 3282, 3356), ("fall", 3358, np.inf)]}
+PHASES = {"P9201256": [("pre", -np.inf, 3226), ("contact", 3228, 3280), ("fusion", 3282, 3356), ("fall", 3358, np.inf)],
+          "PA041271": [("pre", -np.inf, 4488), ("contact", 4490, 4494), ("hold", 4496, 4512), ("post", 4514, np.inf)]}   # provisional (annotation chat 10/17: first touch 4490, single detection 4496-4512)
 
 def load_gt(path):
     """GT .npz (coords normalised, vis, frame_index, W, H) -> dict(coords px (N,12,2), vis (N,12) int, frames (N,))."""
@@ -184,7 +185,7 @@ def main():
             md.append(f"| {name} | {r['subset']} | {r['n']} | " + " | ".join(f"{r[f'pck@{a:.2f}']:.3f}" for a in args.alphas) + " |")
         clean = np.zeros(len(gt["frames"]), bool)
         for ph, lo, hi in PHASES.get(args.clip, []):
-            if ph in ("pre", "fall"):                                   # clean segments: no fusion, no identity ambiguity
+            if ph in ("pre", "fall", "post"):                                   # clean segments: no fusion, no identity ambiguity
                 clean |= (gt["frames"] >= lo) & (gt["frames"] <= hi)
         with open(out / f"offset_{args.clip}_{name}.csv", "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=["joint", "n", "n_used", "mean_dx", "mean_dy", "std_dx", "std_dy", "mean_dist"]); w.writeheader()
