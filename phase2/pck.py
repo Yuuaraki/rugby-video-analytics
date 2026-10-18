@@ -204,11 +204,13 @@ def main():
         if args.bias_correct == "clean":
             calib = np.zeros(len(gt["frames"]), bool)
             for ph, lo, hi in PHASES.get(args.clip, []):
-                if ph in ("pre", "post"):                                       # plan 1018 §3: pre+post only
+                if ph in ("pre", "fall", "post"):                                       # plan 1018 §3: pre+post only
                     calib |= (gt["frames"] >= lo) & (gt["frames"] <= hi)
             pred_bc, bias = bias_correct(pred, gt, calib)
-            np.savetxt(out / f"bias_{args.clip}_{name}.csv", bias, delimiter=",", fmt="%.2f",
-                       header="dx,dy px per BODY12 joint (pred - gt, clean pre+post vis0); 0 = no sample", comments="# ")
+            n_used = np.array([r["n_used"] for r in offsets(pred, gt, calib if calib.any() else None)])
+            np.savetxt(out / f"bias_{args.clip}_{name}.csv", np.column_stack([bias, n_used]), delimiter=",", fmt="%.2f",
+                       header=f"dx,dy px per BODY12 joint (pred - gt), n_used; calibration = {int(calib.sum())} GT frames (pre+fall|post, vis0); 0 = no sample", comments="# ")
+            print(f"[bias] {name}: calibration {int(calib.sum())} GT frames, n_used per joint {n_used.min()}-{n_used.max()}")
             for r in score(pred_bc, gt, args.clip, tuple(args.alphas)):
                 bc_rows.append({"condition": name, **r})
                 md_bc.append(f"| {name} | {r['subset']} | {r['n']} | " + " | ".join(f"{r[f'pck@{a:.2f}']:.3f}" for a in args.alphas) + " |")

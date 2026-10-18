@@ -3,16 +3,17 @@
 import argparse
 from pathlib import Path
 import pandas as pd
+import re
 
 CLIPS = ["P9201256", "PA041271"]
-MAIN = ["raw_verified", "interp", "rts", "tgct_v1", "hybrik_struct", "hybrik_struct_ok", "hybrik_interp"]
+MAIN = ["raw_verified", "interp", "interp_ok", "rts", "tgct_v1", "hybrik_struct", "hybrik_struct_ok", "hybrik_interp"]
 APPX = ["rts_sa1e-3", "tgct_v1m", "tgct_v1g", "interp_oracle", "tgct_v1_oracle"]
 SUBS = ["all", "vis0", "vis1"]
 PHASES = {"P9201256": ["pre", "contact", "fusion", "fall"], "PA041271": ["pre", "contact", "hold", "post"]}
 CEIL = {"P9201256": "self-PCK ceiling (5-frame re-annotation, L_ref 441 px): vis0 0.89@0.10 / 0.92@0.20, vis1 0.70 / 1.00",
         "PA041271": "self-PCK ceiling (L_ref 266 px): vis0 0.92@0.10 / 1.00@0.20, vis1 0.81 / 1.00"}
 FOOT = {"P9201256": "HybrIK person check on the 98 GT frames: person_ok 85, no verified box 9 (fused 1, no_valid 8: contact), "
-                    "HybrIK crop centre outside the verified box on 4 frames (3260, 3266, 3268, 3270: contact). Bias calibration: pre only (3 GT frames; no post in the GT range) -> unreliable.",
+                    "HybrIK crop centre outside the verified box on 4 frames (3260, 3266, 3268, 3270: contact). Bias calibration: pre+fall, 33 GT frames (A3).",
         "PA041271": "HybrIK person check on the 61 GT frames: person_ok 44, no verified box 8 (no_valid 4496-4512 exc. 4500), "
                     "HybrIK crop centre outside the verified box on 9 frames (4426-4442, even frames). Bias calibration: pre 32 + post 17 GT frames."}
 
@@ -53,6 +54,16 @@ def comp_table(df, subs, name):
         lines.append(f"| {s} | {n} | {interp:.3f} | {hybrik:.3f} | {oracle:.3f} | {gain:+.3f} | {both} | {interp_only} | {hybrik_only} | {neither} |")
     return lines + [""]
 
+def a3_foot(D, clip, conds=("interp", "interp_ok", "hybrik_struct_ok")):
+    """Calibration frame count (from the bias csv header) and per-joint n_used range for the key conditions."""
+    head = (D / f"bias_{clip}_{conds[0]}.csv").read_text().splitlines()[0]
+    frames = re.search(r"calibration = (\d+) GT frames", head).group(1)
+    parts = []
+    for c in conds:
+        b = pd.read_csv(D / f"bias_{clip}_{c}.csv", comment="#", header=None, names=["dx", "dy", "n_used"])
+        parts.append(f"{c} n_used per joint {int(b.n_used.min())}-{int(b.n_used.max())} ({int((b.n_used == 0).sum())} joints uncorrected)")
+    return f"{frames} GT frames; " + "; ".join(parts)
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--dir", default="phase2/results/final_v3"); args = ap.parse_args()
     D = Path(args.dir).expanduser(); md = ["# Final table v3 (2026-10-18)", "",
@@ -64,7 +75,9 @@ def main():
         "n counts joint-frames, not images. hybrik_struct_ok is conditional on person_ok and has a different denominator. "
         "Self-PCK is a re-annotation consistency reference, not a strict mathematical ceiling. "
         "Complementarity uses only joint-frames scored by both sheets; its rates may differ from standalone PCK. "
-        "The oracle is an upper bound for choosing between the two predictions on that common set, not arbitrary fusion.", ""]
+        "The oracle is an upper bound for choosing between the two predictions on that common set, not arbitrary fusion.", 
+        "Denominators: hybrik_struct_ok is compared with interp_ok (the same not-person_ok frames blanked), never directly with interp; "
+        "where every frame is person_ok (P9201256 fusion, n=405) interp = interp_ok and the usual comparison holds.", ""]
     for clip in CLIPS:
         pck = pd.read_csv(D / f"pck_{clip}.csv")
         md += [f"## Main table — {clip}", CEIL[clip], ""] + table(pck, MAIN, SUBS) + [f"Footnote: {FOOT[clip]}", ""]
@@ -75,7 +88,8 @@ def main():
         # TODO 2: retain the CSV's joint-group order after excluding visibility and phase subsets.
         groups = [s for s in pck["subset"].unique() if s not in SUBS + PHASES[clip]]
         md += [f"## A2 by joint group — {clip}", ""] + table(pck, MAIN, groups)
-        md += [f"## A3 bias-corrected (within-clip calibration on pre+post vis0; secondary) — {clip}", ""] + table(pd.read_csv(D / f"pck_{clip}_bc.csv"), MAIN, SUBS)
+        md += [f"## A3 bias-corrected (within-clip calibration: P9201256 pre+fall / PA041271 pre+post, vis0; secondary) — {clip}", ""] + table(pd.read_csv(D / f"pck_{clip}_bc.csv"), MAIN, SUBS)
+        md += [f"Calibration footnote: {a3_foot(D, clip)}. fall is a fallen posture: the joint-definition offset there may differ from standing, so the P9201256 bias-corrected values are read as a secondary metric.", ""]
         md += [f"## A4 sensitivity / variants / oracle rows — {clip}", ""] + table(pck, APPX, SUBS)
         for name in ("hybrik_struct", "hybrik_interp"):
             comp = pd.read_csv(D / f"complementarity_{clip}_{name}.csv")

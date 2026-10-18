@@ -2,6 +2,7 @@
 
 Scoring: phase2/pck.py (per-frame torso normalisation, GT frames only; NaN joint-frames excluded from the denominator; (0,0) misses count as wrong). Main metric PCK@0.20, secondary @0.10. hybrik_struct = all window even frames (person-selection failures retained and scored against the GT); hybrik_struct_ok = frames where HybrIK's crop centre lies inside the verified tackler box (NaN elsewhere); hybrik_interp = hybrik_struct_ok with not-ok frames bridged by linear interpolation. Bias-corrected, oracle and 2x2 tables are diagnostics (appendix), not contestants.
 n counts joint-frames, not images. hybrik_struct_ok is conditional on person_ok and has a different denominator. Self-PCK is a re-annotation consistency reference, not a strict mathematical ceiling. Complementarity uses only joint-frames scored by both sheets; its rates may differ from standalone PCK. The oracle is an upper bound for choosing between the two predictions on that common set, not arbitrary fusion.
+Denominators: hybrik_struct_ok is compared with interp_ok (the same not-person_ok frames blanked), never directly with interp; where every frame is person_ok (P9201256 fusion, n=405) interp = interp_ok and the usual comparison holds.
 
 ## Main table — P9201256
 self-PCK ceiling (5-frame re-annotation, L_ref 441 px): vis0 0.89@0.10 / 0.92@0.20, vis1 0.70 / 1.00
@@ -10,13 +11,14 @@ self-PCK ceiling (5-frame re-annotation, L_ref 441 px): vis0 0.89@0.10 / 0.92@0.
 |---|---|---|---|---|---|---|---|---|---|
 | raw_verified | 1125 | 733 | 392 | 0.590 | 0.634 | 0.508 | 0.319 | 0.351 | 0.260 |
 | interp | 1125 | 733 | 392 | 0.634 | 0.674 | 0.559 | 0.340 | 0.374 | 0.278 |
+| interp_ok | 969 | 631 | 338 | 0.666 | 0.704 | 0.595 | 0.368 | 0.401 | 0.308 |
 | rts | 1125 | 733 | 392 | 0.529 | 0.551 | 0.487 | 0.239 | 0.254 | 0.212 |
 | tgct_v1 | 1125 | 733 | 392 | 0.588 | 0.628 | 0.515 | 0.309 | 0.332 | 0.268 |
 | hybrik_struct | 1125 | 733 | 392 | 0.515 | 0.514 | 0.515 | 0.169 | 0.134 | 0.235 |
 | hybrik_struct_ok | 969 | 631 | 338 | 0.589 | 0.585 | 0.598 | 0.194 | 0.152 | 0.272 |
 | hybrik_interp | 1125 | 733 | 392 | 0.516 | 0.516 | 0.515 | 0.170 | 0.135 | 0.235 |
 
-Footnote: HybrIK person check on the 98 GT frames: person_ok 85, no verified box 9 (fused 1, no_valid 8: contact), HybrIK crop centre outside the verified box on 4 frames (3260, 3266, 3268, 3270: contact). Bias calibration: pre only (3 GT frames; no post in the GT range) -> unreliable.
+Footnote: HybrIK person check on the 98 GT frames: person_ok 85, no verified box 9 (fused 1, no_valid 8: contact), HybrIK crop centre outside the verified box on 4 frames (3260, 3266, 3268, 3270: contact). Bias calibration: pre+fall, 33 GT frames (A3).
 
 ## Main table — PA041271
 self-PCK ceiling (L_ref 266 px): vis0 0.92@0.10 / 1.00@0.20, vis1 0.81 / 1.00
@@ -25,6 +27,7 @@ self-PCK ceiling (L_ref 266 px): vis0 0.92@0.10 / 1.00@0.20, vis1 0.81 / 1.00
 |---|---|---|---|---|---|---|---|---|---|
 | raw_verified | 732 | 480 | 252 | 0.750 | 0.842 | 0.575 | 0.466 | 0.535 | 0.333 |
 | interp | 732 | 480 | 252 | 0.833 | 0.923 | 0.663 | 0.519 | 0.590 | 0.385 |
+| interp_ok | 528 | 346 | 182 | 0.843 | 0.931 | 0.676 | 0.530 | 0.595 | 0.407 |
 | rts | 732 | 480 | 252 | 0.736 | 0.804 | 0.607 | 0.291 | 0.321 | 0.234 |
 | tgct_v1 | 732 | 480 | 252 | 0.824 | 0.919 | 0.643 | 0.481 | 0.552 | 0.345 |
 | hybrik_struct | 732 | 480 | 252 | 0.262 | 0.292 | 0.206 | 0.123 | 0.125 | 0.119 |
@@ -41,6 +44,7 @@ Footnote: HybrIK person check on the 61 GT frames: person_ok 44, no verified box
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | raw_verified | 36 | 324 | 405 | 360 | 0.833 | 0.290 | 0.504 | 0.933 | 0.611 | 0.139 | 0.237 | 0.544 |
 | interp | 36 | 324 | 405 | 360 | 0.833 | 0.426 | 0.516 | 0.933 | 0.611 | 0.198 | 0.249 | 0.544 |
+| interp_ok | 36 | 168 | 405 | 360 | 0.833 | 0.417 | 0.516 | 0.933 | 0.611 | 0.226 | 0.249 | 0.544 |
 | rts | 36 | 324 | 405 | 360 | 0.472 | 0.228 | 0.415 | 0.933 | 0.139 | 0.034 | 0.153 | 0.531 |
 | tgct_v1 | 36 | 324 | 405 | 360 | 0.806 | 0.321 | 0.477 | 0.933 | 0.583 | 0.145 | 0.232 | 0.517 |
 | hybrik_struct | 36 | 324 | 405 | 360 | 0.917 | 0.056 | 0.667 | 0.717 | 0.444 | 0.012 | 0.220 | 0.225 |
@@ -58,23 +62,27 @@ Footnote: HybrIK person check on the 61 GT frames: person_ok 44, no verified box
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | raw_verified | 185 | 196 | 156 | 196 | 196 | 196 | 0.627 | 0.628 | 0.571 | 0.495 | 0.607 | 0.612 | 0.276 | 0.485 | 0.429 | 0.122 | 0.311 | 0.311 |
 | interp | 185 | 196 | 156 | 196 | 196 | 196 | 0.692 | 0.673 | 0.609 | 0.515 | 0.663 | 0.648 | 0.292 | 0.510 | 0.462 | 0.122 | 0.342 | 0.337 |
+| interp_ok | 159 | 170 | 130 | 170 | 170 | 170 | 0.755 | 0.706 | 0.631 | 0.553 | 0.671 | 0.676 | 0.340 | 0.559 | 0.500 | 0.141 | 0.341 | 0.359 |
 | rts | 185 | 196 | 156 | 196 | 196 | 196 | 0.562 | 0.582 | 0.442 | 0.444 | 0.597 | 0.531 | 0.243 | 0.321 | 0.359 | 0.066 | 0.204 | 0.265 |
 | tgct_v1 | 185 | 196 | 156 | 196 | 196 | 196 | 0.638 | 0.643 | 0.538 | 0.495 | 0.617 | 0.592 | 0.270 | 0.449 | 0.423 | 0.112 | 0.296 | 0.327 |
 | hybrik_struct | 185 | 196 | 156 | 196 | 196 | 196 | 0.530 | 0.556 | 0.468 | 0.526 | 0.607 | 0.393 | 0.081 | 0.224 | 0.141 | 0.158 | 0.265 | 0.133 |
 | hybrik_struct_ok | 159 | 170 | 130 | 170 | 170 | 170 | 0.616 | 0.624 | 0.554 | 0.606 | 0.676 | 0.453 | 0.094 | 0.259 | 0.162 | 0.182 | 0.300 | 0.153 |
 | hybrik_interp | 185 | 196 | 156 | 196 | 196 | 196 | 0.530 | 0.556 | 0.462 | 0.526 | 0.612 | 0.398 | 0.081 | 0.224 | 0.135 | 0.158 | 0.276 | 0.133 |
 
-## A3 bias-corrected (within-clip calibration on pre+post vis0; secondary) — P9201256
+## A3 bias-corrected (within-clip calibration: P9201256 pre+fall / PA041271 pre+post, vis0; secondary) — P9201256
 
 | condition | n all | n vis0 | n vis1 | all@0.20 | vis0@0.20 | vis1@0.20 | all@0.10 | vis0@0.10 | vis1@0.10 |
 |---|---|---|---|---|---|---|---|---|---|
-| raw_verified | 1125 | 733 | 392 | 0.566 | 0.607 | 0.490 | 0.289 | 0.311 | 0.247 |
-| interp | 1125 | 733 | 392 | 0.604 | 0.649 | 0.520 | 0.300 | 0.329 | 0.247 |
-| rts | 1125 | 733 | 392 | 0.466 | 0.491 | 0.418 | 0.164 | 0.213 | 0.071 |
-| tgct_v1 | 1125 | 733 | 392 | 0.556 | 0.595 | 0.482 | 0.295 | 0.306 | 0.276 |
-| hybrik_struct | 1125 | 733 | 392 | 0.541 | 0.542 | 0.541 | 0.195 | 0.181 | 0.219 |
-| hybrik_struct_ok | 969 | 631 | 338 | 0.622 | 0.620 | 0.627 | 0.225 | 0.209 | 0.254 |
-| hybrik_interp | 1125 | 733 | 392 | 0.544 | 0.543 | 0.546 | 0.197 | 0.184 | 0.222 |
+| raw_verified | 1125 | 733 | 392 | 0.603 | 0.658 | 0.500 | 0.382 | 0.458 | 0.240 |
+| interp | 1125 | 733 | 392 | 0.652 | 0.709 | 0.546 | 0.412 | 0.492 | 0.260 |
+| interp_ok | 969 | 631 | 338 | 0.676 | 0.731 | 0.574 | 0.438 | 0.526 | 0.272 |
+| rts | 1125 | 733 | 392 | 0.522 | 0.593 | 0.388 | 0.280 | 0.387 | 0.079 |
+| tgct_v1 | 1125 | 733 | 392 | 0.588 | 0.638 | 0.495 | 0.390 | 0.454 | 0.270 |
+| hybrik_struct | 1125 | 733 | 392 | 0.572 | 0.603 | 0.513 | 0.360 | 0.442 | 0.207 |
+| hybrik_struct_ok | 969 | 631 | 338 | 0.659 | 0.694 | 0.595 | 0.418 | 0.513 | 0.240 |
+| hybrik_interp | 1125 | 733 | 392 | 0.575 | 0.604 | 0.520 | 0.363 | 0.446 | 0.207 |
+
+Calibration footnote: 33 GT frames; interp n_used per joint 3-33 (0 joints uncorrected); interp_ok n_used per joint 3-33 (0 joints uncorrected); hybrik_struct_ok n_used per joint 3-33 (0 joints uncorrected). fall is a fallen posture: the joint-definition offset there may differ from standing, so the P9201256 bias-corrected values are read as a secondary metric.
 
 ## A4 sensitivity / variants / oracle rows — P9201256
 
@@ -116,6 +124,7 @@ Footnote: HybrIK person check on the 61 GT frames: person_ok 44, no verified box
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | raw_verified | 384 | 36 | 108 | 204 | 0.940 | 0.861 | 0.065 | 0.735 | 0.604 | 0.361 | 0.037 | 0.451 |
 | interp | 384 | 36 | 108 | 204 | 0.943 | 0.833 | 0.611 | 0.745 | 0.609 | 0.361 | 0.370 | 0.456 |
+| interp_ok | 276 | 36 | 12 | 204 | 0.931 | 0.833 | 0.500 | 0.745 | 0.620 | 0.361 | 0.250 | 0.456 |
 | rts | 384 | 36 | 108 | 204 | 0.799 | 0.639 | 0.491 | 0.765 | 0.284 | 0.167 | 0.185 | 0.382 |
 | tgct_v1 | 384 | 36 | 108 | 204 | 0.943 | 0.833 | 0.546 | 0.745 | 0.581 | 0.361 | 0.259 | 0.431 |
 | hybrik_struct | 384 | 36 | 108 | 204 | 0.461 | 0.306 | 0.037 | 0.000 | 0.227 | 0.083 | 0.000 | 0.000 |
@@ -133,23 +142,27 @@ Footnote: HybrIK person check on the 61 GT frames: person_ok 44, no verified box
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | raw_verified | 122 | 122 | 122 | 122 | 122 | 122 | 0.730 | 0.639 | 0.697 | 0.820 | 0.811 | 0.803 | 0.320 | 0.492 | 0.533 | 0.328 | 0.648 | 0.475 |
 | interp | 122 | 122 | 122 | 122 | 122 | 122 | 0.795 | 0.656 | 0.721 | 0.951 | 0.943 | 0.934 | 0.361 | 0.492 | 0.549 | 0.377 | 0.730 | 0.607 |
+| interp_ok | 88 | 88 | 88 | 88 | 88 | 88 | 0.807 | 0.716 | 0.773 | 0.932 | 0.920 | 0.909 | 0.341 | 0.580 | 0.602 | 0.432 | 0.693 | 0.534 |
 | rts | 122 | 122 | 122 | 122 | 122 | 122 | 0.811 | 0.582 | 0.500 | 0.893 | 0.885 | 0.746 | 0.262 | 0.328 | 0.156 | 0.238 | 0.336 | 0.426 |
 | tgct_v1 | 122 | 122 | 122 | 122 | 122 | 122 | 0.828 | 0.656 | 0.721 | 0.902 | 0.902 | 0.934 | 0.352 | 0.508 | 0.533 | 0.303 | 0.656 | 0.533 |
 | hybrik_struct | 122 | 122 | 122 | 122 | 122 | 122 | 0.303 | 0.336 | 0.254 | 0.254 | 0.270 | 0.156 | 0.164 | 0.254 | 0.090 | 0.066 | 0.123 | 0.041 |
 | hybrik_struct_ok | 88 | 88 | 88 | 88 | 88 | 88 | 0.420 | 0.443 | 0.352 | 0.352 | 0.375 | 0.216 | 0.227 | 0.352 | 0.125 | 0.091 | 0.170 | 0.057 |
 | hybrik_interp | 122 | 122 | 122 | 122 | 122 | 122 | 0.303 | 0.344 | 0.254 | 0.254 | 0.270 | 0.156 | 0.164 | 0.254 | 0.090 | 0.066 | 0.123 | 0.041 |
 
-## A3 bias-corrected (within-clip calibration on pre+post vis0; secondary) — PA041271
+## A3 bias-corrected (within-clip calibration: P9201256 pre+fall / PA041271 pre+post, vis0; secondary) — PA041271
 
 | condition | n all | n vis0 | n vis1 | all@0.20 | vis0@0.20 | vis1@0.20 | all@0.10 | vis0@0.10 | vis1@0.10 |
 |---|---|---|---|---|---|---|---|---|---|
 | raw_verified | 732 | 480 | 252 | 0.766 | 0.865 | 0.579 | 0.605 | 0.717 | 0.393 |
 | interp | 732 | 480 | 252 | 0.846 | 0.946 | 0.655 | 0.660 | 0.781 | 0.429 |
+| interp_ok | 528 | 346 | 182 | 0.866 | 0.962 | 0.681 | 0.665 | 0.766 | 0.473 |
 | rts | 732 | 480 | 252 | 0.747 | 0.831 | 0.587 | 0.422 | 0.512 | 0.250 |
 | tgct_v1 | 732 | 480 | 252 | 0.840 | 0.946 | 0.639 | 0.641 | 0.762 | 0.409 |
 | hybrik_struct | 732 | 480 | 252 | 0.305 | 0.340 | 0.238 | 0.193 | 0.215 | 0.151 |
 | hybrik_struct_ok | 528 | 346 | 182 | 0.413 | 0.457 | 0.330 | 0.265 | 0.295 | 0.209 |
 | hybrik_interp | 732 | 480 | 252 | 0.303 | 0.338 | 0.238 | 0.193 | 0.215 | 0.151 |
+
+Calibration footnote: 49 GT frames; interp n_used per joint 0-49 (1 joints uncorrected); interp_ok n_used per joint 0-40 (1 joints uncorrected); hybrik_struct_ok n_used per joint 0-28 (1 joints uncorrected). fall is a fallen posture: the joint-definition offset there may differ from standing, so the P9201256 bias-corrected values are read as a secondary metric.
 
 ## A4 sensitivity / variants / oracle rows — PA041271
 
