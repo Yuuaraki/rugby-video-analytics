@@ -7,6 +7,7 @@ import numpy as np
 from phase2.pck import (
     BODY12,
     align,
+    bias_correct,
     load_gt,
     load_sheet,
     offsets,
@@ -122,6 +123,26 @@ class PckTests(unittest.TestCase):
         self.assertEqual(rows[0]["n"], 0)
         self.assertTrue(np.isnan(rows[0]["mean_dx"]))
 
+    def test_nan_prediction_is_excluded_from_numerator_and_denominator(self):
+        gt = make_gt((100, 102))
+        pred = gt["coords"].copy()                      # perfect sheet: n = 24, all correct
+        pred[0, 3] = np.nan                             # one joint-frame unknown -> not scored
+        correct, scored, _ = pck_matrix(pred, gt, 0.10)
+        self.assertEqual(int(scored.sum()), 24 - 1)
+        self.assertEqual(int(correct.sum()), 24 - 1)
+        pred[1, 3] = (0, 0)                             # a (0,0) miss stays scored and counts as wrong
+        correct, scored, _ = pck_matrix(pred, gt, 0.10)
+        self.assertEqual(int(scored.sum()), 24 - 1)
+        self.assertEqual(int(correct.sum()), 24 - 2)
+
+    def test_bias_correct_restores_a_uniformly_shifted_sheet(self):
+        gt = make_gt((100, 102, 104))                   # torso 60 px -> 0.10*60 = 6 px, offsets() keeps dist <= 30 px
+        shift = np.array([8.0, -12.0])                  # 14.4 px: wrong at alpha 0.10, but inside the outlier rule
+        pred = gt["coords"] + shift
+        pred_bc, bias = bias_correct(pred, gt, np.ones(3, bool))
+        np.testing.assert_allclose(bias, np.tile(shift, (12, 1)))
+        self.assertEqual(pck_matrix(pred, gt, 0.10)[0].mean(), 0.0)
+        self.assertEqual(pck_matrix(pred_bc, gt, 0.10)[0].mean(), 1.0)
 
 if __name__ == "__main__":
     unittest.main()

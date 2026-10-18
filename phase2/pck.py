@@ -159,6 +159,14 @@ def offsets(pred, gt, clean=None, max_rel=0.5):
     return rows
 
 
+def bias_correct(pred, gt, clean):
+    """Within-clip calibration (secondary metric): subtract each joint's mean offset, estimated by offsets() on CLEAN
+    vis==0 joint-frames (same estimator and outlier rule as the offset tables), from every frame of the sheet.
+    Joints with no usable clean sample keep bias 0. -> pred_bc (N,12,2), bias (12,2) px."""
+    rows = offsets(pred, gt, clean if clean.any() else None)
+    bias = np.nan_to_num(np.array([[r["mean_dx"], r["mean_dy"]] for r in rows], float))
+    return pred - bias[None], bias
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("gt")
@@ -166,6 +174,8 @@ def main():
     ap.add_argument("sheets", nargs="+", help="name=path.npz")
     ap.add_argument("--alphas", type=float, nargs="+", default=[0.10, 0.20])
     ap.add_argument("--out", default="phase2/results")
+    ap.add_argument("--bias-correct", choices=["clean"], default=None,
+                    help="also score pred - per-joint mean offset estimated on clean (pre+post) vis=0 joint-frames")
     args = ap.parse_args()
     if any(not np.isfinite(a) or a < 0 for a in args.alphas):
         ap.error("--alphas values must be finite and nonnegative")
@@ -175,6 +185,7 @@ def main():
     s = torso_length(gt)
     print(f"{args.clip}: {len(gt['frames'])} GT frames, torso length median {np.median(s):.0f} px "f"(alpha 0.10 -> {0.10 * np.median(s):.0f} px)")
     all_rows, md = [], [f"| condition | subset | n | " + " | ".join(f"PCK@{a:.2f}" for a in args.alphas) + " |", "|---" * (3 + len(args.alphas)) + "|"]
+    bc_rows, md_bc = [], list(md)                                              # same header, bias-corrected rows
     for spec in args.sheets:
         name, path = spec.split("=", 1)
         if not name or not path:
@@ -190,10 +201,24 @@ def main():
         with open(out / f"offset_{args.clip}_{name}.csv", "w", newline="") as f:
             w = csv.DictWriter(f, fieldnames=["joint", "n", "n_used", "mean_dx", "mean_dy", "std_dx", "std_dy", "mean_dist"]); w.writeheader()
             w.writerows(offsets(pred, gt, clean if clean.any() else None))
+        if args.bias_correct == "clean":
+            calib = np.zeros(len(gt["frames"]), bool)
+            for ph, lo, hi in PHASES.get(args.clip, []):
+                if ph in ("pre", "post"):                                       # plan 1018 §3: pre+post only
+                    calib |= (gt["frames"] >= lo) & (gt["frames"] <= hi)
+            pred_bc, bias = bias_correct(pred, gt, calib)
+            np.savetxt(out / f"bias_{args.clip}_{name}.csv", bias, delimiter=",", fmt="%.2f",
+                       header="dx,dy px per BODY12 joint (pred - gt, clean pre+post vis0); 0 = no sample", comments="# ")
+            for r in score(pred_bc, gt, args.clip, tuple(args.alphas)):
+                bc_rows.append({"condition": name, **r})
+                md_bc.append(f"| {name} | {r['subset']} | {r['n']} | " + " | ".join(f"{r[f'pck@{a:.2f}']:.3f}" for a in args.alphas) + " |")
     with open(out / f"pck_{args.clip}.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(all_rows[0].keys())); w.writeheader(); w.writerows(all_rows)
     (out / f"pck_{args.clip}.md").write_text("\n".join(md) + "\n"); print("\n".join(md))
-
+    if args.bias_correct:
+        with open(out / f"pck_{args.clip}_bc.csv", "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(bc_rows[0].keys())); w.writeheader(); w.writerows(bc_rows)
+        (out / f"pck_{args.clip}_bc.md").write_text("\n".join(md_bc) + "\n"); print("\n[bias-corrected (within-clip calibration, pre+post vis0)]"); print("\n".join(md_bc))
 
 if __name__ == "__main__":
     main()
