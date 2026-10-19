@@ -58,7 +58,7 @@ ax.plot(gf[gv == 1], gc[gv == 1], "o", mfc="none", mec="k", ms=5, label="GT occl
 ax.set_ylabel(f"{BODY12[j]} {args.axis} [px]"); ax.legend(fontsize=8, loc="best"); ax.grid(alpha=0.3)
 ax2.plot(fi, res, color="tab:red"); ax2.axhline(0, color="k", lw=0.5); ax2.grid(alpha=0.3)
 ax2.set_ylabel("residual [px]"); ax2.set_xlabel("original frame index (even frames)")
-fig.suptitle(f"{args.clip} tackler {BODY12[j]} — what T-GCT added to the interpolation")
+fig.suptitle(f"{BODY12[j]} {args.axis}(t): GT, YOLO, interpolation, T-GCT, HybrIK")      # clip is in the file name
 fig.tight_layout()
 out = Path(args.out) if args.out else Path("phase2/results") / f"fig_tgct_{args.clip}_{BODY12[j]}_{args.axis}.png"
 out.parent.mkdir(parents=True, exist_ok=True)

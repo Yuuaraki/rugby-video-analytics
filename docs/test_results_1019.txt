@@ -1,0 +1,12 @@
+== test_metrics
+L_sho 0.00646 (expect 0.00646)   R_wri 0.01175 (expect 0.01175)
+all tests passed
+== test_temporal
+empty-window tests passed
+all temporal tests passed
+== test_pck
+
+OK
+== test_tgct
+test 4 OK
+test 5 OK

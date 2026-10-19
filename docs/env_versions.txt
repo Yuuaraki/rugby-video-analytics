@@ -1,0 +1,3 @@
+Tesla T4, 550.90.07
+rugby: python 3.11.16, torch 2.6.0+cu124, ultralytics 8.4.155, numpy 2.4.6
+hybrik: python 3.8.20, torch 1.9.1+cu111, numpy 1.23.5, opencv 4.1.2
