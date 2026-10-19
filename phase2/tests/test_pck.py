@@ -98,7 +98,7 @@ class PckTests(unittest.TestCase):
         gt["vis"][1, 0] = 2
         gt["coords"][1, 0] = np.nan
 
-        lengths = torso_length(gt)
+        lengths = torso_length(gt, per_frame=True)
 
         np.testing.assert_allclose(lengths, [60, 60, 60])
 
@@ -143,6 +143,13 @@ class PckTests(unittest.TestCase):
         np.testing.assert_allclose(bias, np.tile(shift, (12, 1)))
         self.assertEqual(pck_matrix(pred, gt, 0.10)[0].mean(), 0.0)
         self.assertEqual(pck_matrix(pred_bc, gt, 0.10)[0].mean(), 1.0)
+        
+    def test_torso_length_default_is_per_clip_reference(self):
+        gt = make_gt((1, 2, 3))                       # torso 60 on every frame
+        gt["coords"][1, [6, 7], 1] = 100              # frame 2: torso 80
+        gt["coords"][2, [6, 7], 1] = 120              # frame 3: torso 100
+        gt["vis"][1, 0] = 2                           # frame 2 excluded from the reference -> median of {60, 100}
+        np.testing.assert_allclose(torso_length(gt), [80, 80, 80])
 
 if __name__ == "__main__":
     unittest.main()

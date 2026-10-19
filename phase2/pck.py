@@ -88,8 +88,16 @@ def align(gt, sheet):
         warnings.warn(f"{missing} GT frames missing from the sheet")
     return pred
 
-def torso_length(gt):
-    """s_t (N,) px: |mid(shoulders) - mid(hips)| from the GT. Frames where any of the 4 joints is vis==2 -> clip median."""
+PER_FRAME = False          # module default; main() sets it from --per-frame (appendix sensitivity check only)
+
+
+def torso_length(gt, per_frame=None):
+    """s_t (N,) px. Default (per_frame=False): per-clip L_ref = median |mid(shoulders) - mid(hips)| over frames whose
+    four torso joints are vis<2 and finite, broadcast to every frame (pre-registered 2026-10-17; HQ 2026-10-19).
+    per_frame=True: each frame's own length, frames with a torso joint vis==2 -> clip median (behaviour before
+    2026-10-19, kept for the appendix sensitivity table)."""
+    if per_frame is None:
+        per_frame = PER_FRAME
     c, vis = gt["coords"], gt["vis"]
     s = np.linalg.norm(c[:, [0, 1]].mean(1) - c[:, [6, 7]].mean(1), axis=-1)
     ok = (vis[:, [0, 1, 6, 7]] < 2).all(1) & np.isfinite(s)
@@ -98,6 +106,8 @@ def torso_length(gt):
     median = np.median(s[ok])
     if not np.isfinite(median) or median <= 0:
         raise ValueError(f"Median GT torso length must be finite and positive, got {median}")
+    if not per_frame:
+        return np.full_like(s, median)
     s[~ok] = median
     return s
 
@@ -168,6 +178,7 @@ def bias_correct(pred, gt, clean):
     return pred - bias[None], bias
 
 def main():
+    global PER_FRAME
     ap = argparse.ArgumentParser()
     ap.add_argument("gt")
     ap.add_argument("clip")
@@ -176,14 +187,19 @@ def main():
     ap.add_argument("--out", default="phase2/results")
     ap.add_argument("--bias-correct", choices=["clean"], default=None,
                     help="also score pred - per-joint mean offset estimated on clean (pre+post) vis=0 joint-frames")
+    ap.add_argument("--per-frame", action="store_true",
+                    help="normalise by each frame's own torso length (appendix sensitivity); default = per-clip L_ref")
     args = ap.parse_args()
+    PER_FRAME = args.per_frame
     if any(not np.isfinite(a) or a < 0 for a in args.alphas):
         ap.error("--alphas values must be finite and nonnegative")
     gt = load_gt(Path(args.gt).expanduser())
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     s = torso_length(gt)
-    print(f"{args.clip}: {len(gt['frames'])} GT frames, torso length median {np.median(s):.0f} px "f"(alpha 0.10 -> {0.10 * np.median(s):.0f} px)")
+    print(f"{args.clip}: {len(gt['frames'])} GT frames, "
+          f"{'per-frame torso median' if args.per_frame else 'L_ref'} {np.median(s):.0f} px "
+          f"(alpha 0.10 -> {0.10 * np.median(s):.0f} px)")
     all_rows, md = [], [f"| condition | subset | n | " + " | ".join(f"PCK@{a:.2f}" for a in args.alphas) + " |", "|---" * (3 + len(args.alphas)) + "|"]
     bc_rows, md_bc = [], list(md)                                              # same header, bias-corrected rows
     for spec in args.sheets:
