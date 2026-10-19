@@ -32,10 +32,10 @@ def table(df, conds, subs, alphas=(0.20, 0.10)):
         lines.append(f"| {c} | " + " | ".join(ns) + " | " + " | ".join(vals) + " |")
     return lines + [""]
 
-def comp_table(df, subs, name):
+def comp_table(df, subs, name, iname="interp"):
     """complementarity csv (alpha 0.20) -> markdown with rates and the 2x2 cells. """
     d = df[(df.alpha == 0.20) & df.subset.isin(subs)].set_index("subset")
-    lines = [f"| subset | n | interp | {name} | oracle | gain | both | interp-only | {name}-only | neither |", "|---" * 10 + "|"]
+    lines = [f"| subset | n | {iname} | {name} | oracle | gain | both | {iname}-only | {name}-only | neither |", "|---" * 10 + "|"]
     if not d.index.is_unique:
         raise ValueError(f"Duplicate complementarity subset rows at alpha 0.20 for {name}")
     # TODO 1: one line per subset, preserving the values from the complementarity CSV.
@@ -67,7 +67,9 @@ def a3_foot(D, clip, conds=("interp", "interp_ok", "hybrik_struct_ok")):
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--dir", default="phase2/results/final_v3"); args = ap.parse_args()
     D = Path(args.dir).expanduser(); md = ["# Final table v3 (2026-10-18)", "",
-        "Scoring: phase2/pck.py (per-frame torso normalisation, GT frames only; NaN joint-frames excluded from the denominator; (0,0) misses count as wrong). "
+        "Scoring: phase2/pck.py with the per-clip reference torso length L_ref = median shoulder-mid–hip-mid distance over GT frames "
+        "with all four torso joints vis≠2 (P9201256 441 px, PA041271 266 px; pre-registered 2026-10-17). Per-frame results are kept in "
+        "results/final_v3_perframe/ as a sensitivity check. GT frames only; NaN joint-frames excluded from the denominator; (0,0) misses count as wrong. "
         "Main metric PCK@0.20, secondary @0.10. hybrik_struct = all window even frames (person-selection failures retained and scored against the GT); "
         "hybrik_struct_ok = frames where HybrIK's crop centre lies inside the verified tackler box (NaN elsewhere); "
         "hybrik_interp = hybrik_struct_ok with not-ok frames bridged by linear interpolation. "
@@ -77,7 +79,8 @@ def main():
         "Complementarity uses only joint-frames scored by both sheets; its rates may differ from standalone PCK. "
         "The oracle is an upper bound for choosing between the two predictions on that common set, not arbitrary fusion.", 
         "Denominators: hybrik_struct_ok is compared with interp_ok (the same not-person_ok frames blanked), never directly with interp; "
-        "where every frame is person_ok (P9201256 fusion, n=405) interp = interp_ok and the usual comparison holds.", ""]
+        "where every frame is person_ok (P9201256 fusion, n=405) interp = interp_ok and the usual comparison holds. "
+        "Complementarity (i) interp vs hybrik_struct is the pipeline as it stands; (ii) interp_ok vs hybrik_struct_ok is the complementarity when person selection is right; (iii) interp vs hybrik_interp.", ""]
     for clip in CLIPS:
         pck = pd.read_csv(D / f"pck_{clip}.csv")
         md += [f"## Main table — {clip}", CEIL[clip], ""] + table(pck, MAIN, SUBS) + [f"Footnote: {FOOT[clip]}", ""]
@@ -91,9 +94,11 @@ def main():
         md += [f"## A3 bias-corrected (within-clip calibration: P9201256 pre+fall / PA041271 pre+post, vis0; secondary) — {clip}", ""] + table(pd.read_csv(D / f"pck_{clip}_bc.csv"), MAIN, SUBS)
         md += [f"Calibration footnote: {a3_foot(D, clip)}. fall is a fallen posture: the joint-definition offset there may differ from standing, so the P9201256 bias-corrected values are read as a secondary metric.", ""]
         md += [f"## A4 sensitivity / variants / oracle rows — {clip}", ""] + table(pck, APPX, SUBS)
-        for name in ("hybrik_struct", "hybrik_interp"):
+        for iname, name, label in (("interp", "hybrik_struct", "(i) pipeline as it stands"),
+                                   ("interp_ok", "hybrik_struct_ok", "(ii) person_ok frames: complementarity when person selection is right"),
+                                   ("interp", "hybrik_interp", "(iii)")):
             comp = pd.read_csv(D / f"complementarity_{clip}_{name}.csv")
-            md += [f"## A5 complementarity (ORACLE upper bound, @0.20) interp vs {name} — {clip}", ""] + comp_table(comp, SUBS + PHASES[clip], name)
+            md += [f"## A5 complementarity {label} — ORACLE upper bound @0.20, {iname} vs {name} — {clip}", ""] + comp_table(comp, SUBS + PHASES[clip], name, iname)
     md += ["## A6 gap-length breakdown (T-GCT): see phase2/results/tgct_v1/ (tgct_report.py output, unchanged)", ""]
     (D / "final_table_v3.md").write_text("\n".join(md) + "\n"); print(f"wrote {D / 'final_table_v3.md'} ({len(md)} lines)")
 
