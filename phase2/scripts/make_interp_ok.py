@@ -1,4 +1,4 @@
-"""interp_ok sheet (HQ fix 1, 2026-10-18 evening): the linear-interpolation sheet with the SAME frames blanked (NaN)
+"""interp_ok sheet : the linear-interpolation sheet with the SAME frames blanked (NaN)
 as hybrik_struct_ok, so that the two rows are scored on one denominator. Run in `rugby`.
   python phase2/scripts/make_interp_ok.py --clip P9201256 --dir ~/data/phase2_npz/win3162"""
 import argparse

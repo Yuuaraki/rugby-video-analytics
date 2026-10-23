@@ -56,11 +56,11 @@ def main():
     P = project_cam_to_pixels(X, bbox, W, H)[:, SMPL_TO_BODY12] / np.array([W, H]) # (N, 12, 2) normalized pixel coordinates
     S = np.asarray(res["pred_scores"], float)[:, SMPL_TO_BODY12] # (N, 12) scores for the selected joints
     
-    # TODO 1: clip index i (0-based, order of res["img_path"]) -> original 1-based frame.
+    #: clip index i (0-based, order of res["img_path"]) -> original 1-based frame.
     off = int(read_offset(args.offset)["first_orig_0based"])
     orig = np.arange(N) + 1 + off   #(shape (N,))
 
-    # TODO 2: keep even original frames inside the verified window.
+    #: keep even original frames inside the verified window.
     with np.load(args.verified, allow_pickle=True) as archive:
         v = {key: archive[key] for key in ("frame_index", "bbox", "identity_verdict", "W", "H")}
     vf = v["frame_index"].astype(int)
@@ -72,7 +72,7 @@ def main():
     if frames.size == 0 or not np.array_equal(frames, expected) or not np.isin(frames, vf).all():
         raise ValueError("HybrIK frames must fully cover the verified window's even frames")
 
-    # TODO 3: person_ok = HybrIK crop centre inside the verified tackler bbox of the same frame; False where that bbox is all zero.
+    #: person_ok = HybrIK crop centre inside the verified tackler bbox of the same frame; False where that bbox is all zero.
     vrow = np.searchsorted(vf, frames)            # rows of the verified sheet for our frames (vf is sorted, consecutive)
     vb = v["bbox"][vrow].astype(float); verdict = v["identity_verdict"][vrow]
     cx = (bbox[idx, 0] + bbox[idx, 2]) / 2 / W;  cy = (bbox[idx, 1] + bbox[idx, 3]) / 2 / H
@@ -82,7 +82,7 @@ def main():
     if not person_ok.any():
         raise ValueError("Cannot interpolate: no person_ok frames in the verified window")
 
-    # TODO 4: the three coordinate sets (all normalised).
+    #4: the three coordinate sets (all normalised).
     coords = P[idx]; confs = S[idx]
     coords_ok = coords.copy(); coords_ok[~person_ok] = np.nan
     coords_interp = coords.copy()
@@ -90,7 +90,7 @@ def main():
         for a in range(2): 
             coords_interp[:, j, a] = interpolate_gaps(coords[:, j, a], person_ok)
 
-    # TODO 5: save. Common keys for all three sheets:
+    #: save. Common keys for all three sheets:
     common = dict(frame_index=frames, confs=confs, person_ok=person_ok, identity_verdict=verdict,
                   joint_names=np.array(BODY12), W=int(v["W"]), H=int(v["H"]), norm_size=np.array([W, H]),
                   clip=args.clip, person="tackler", first_orig_0based=off, res_pk=str(args.res),
